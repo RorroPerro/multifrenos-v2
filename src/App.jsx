@@ -2,20 +2,24 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './supabase/client'
 import LoginPage from './modules/auth/LoginPage'
+import MainLayout from './layouts/MainLayout' // <--- IMPORTANTE
 import { Loader2 } from 'lucide-react'
+import ClientsPage from './modules/clients/ClientsPage'
+import AutosPage from './modules/autos/AutosPage'
+import ServicesPage from './modules/services/ServicesPage'
+import OrdersPage from './modules/orders/OrdersPage'
+import DashboardPage from './modules/dashboard/DashboardPage'
 
 function App() {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // 1. Verificamos si ya hay una sesión guardada en el navegador
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setLoading(false)
     })
 
-    // 2. Escuchamos cambios (Si se loguea o desloguea en tiempo real)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
       setLoading(false)
@@ -24,7 +28,6 @@ function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Muestra un círculo de carga mientras verifica la sesión (para que no parpadee)
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100">
@@ -36,36 +39,27 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* LÓGICA DE RUTAS PROTEGIDAS */}
-        
-        {/* Si NO hay sesión, mándalo al Login */}
+        {/* Ruta Pública */}
         <Route 
           path="/login" 
           element={!session ? <LoginPage /> : <Navigate to="/dashboard" replace />} 
         />
 
-        {/* Si SÍ hay sesión, muéstrale el Dashboard */}
-        <Route 
-          path="/dashboard" 
-          element={session ? (
-            <div className="p-10 text-center">
-              <h1 className="text-4xl font-bold text-brand-primary">¡Bienvenido de nuevo! 👋</h1>
-              <p className="mt-4 text-slate-600">Sesión activa: {session.user.email}</p>
-              <button 
-                onClick={() => supabase.auth.signOut()}
-                className="mt-8 px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 transition"
-              >
-                Cerrar Sesión
-              </button>
-            </div>
-          ) : <Navigate to="/login" replace />} 
-        />
+        {/* Rutas Privadas (Protegidas por Layout) */}
+        {session && (
+          <Route element={<MainLayout />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/ordenes" element={<OrdersPage />} />
+            <Route path="/clientes" element={<ClientsPage />} />
+            <Route path="/autos" element={<AutosPage />} />
+            <Route path="/servicios" element={<ServicesPage />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Route>
+        )}
 
-        {/* Cualquier otra ruta redirige según si estás logueado o no */}
-        <Route 
-          path="*" 
-          element={<Navigate to={session ? "/dashboard" : "/login"} replace />} 
-        />
+        {/* Redirección por defecto si no hay sesión */}
+        {!session && <Route path="*" element={<Navigate to="/login" replace />} />}
+
       </Routes>
     </BrowserRouter>
   )
