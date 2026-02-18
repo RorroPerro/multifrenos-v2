@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Car, FileText, Tag, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, Wrench, Settings, LogOut, Car, Tag, Package, FileText, ClipboardList, ListTodo } from 'lucide-react'
 import { supabase } from '../supabase/client'
+
 
 export default function Sidebar() {
   const location = useLocation()
@@ -13,8 +14,11 @@ export default function Sidebar() {
     { icon: Users, label: 'Clientes', path: '/clientes' },
     { icon: Car, label: 'Vehículos', path: '/autos' },
     { icon: Tag, label: 'Catálogo Servicios', path: '/servicios' },
+    { icon: Package, label: 'Bodega / Inventario', path: '/inventario' },
+    { icon: ListTodo, label: 'Tareas y Notas', path: '/tareas' },
+    { icon: ClipboardList, label: 'Plantillas Checklist', path: '/plantillas' },
   ]
-
+  
   return (
     <aside className="w-full md:w-64 bg-slate-900 text-white flex flex-col h-full shadow-xl">
       {/* Logo / Marca */}
