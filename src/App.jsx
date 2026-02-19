@@ -14,6 +14,7 @@ import InventoryPage from './modules/inventory/InventoryPage'
 import PublicTrackingPage from './modules/public/PublicTrackingPage'
 import PlantillasPage from './modules/plantillas/PlantillasPage'
 import TareasPage from './modules/tareas/TareasPage'
+import KanbanPage from './modules/pizarra/KanbanPage'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -65,6 +66,7 @@ function App() {
             <Route path="/inventario" element={<InventoryPage />} />
             <Route path="/plantillas" element={<PlantillasPage />} />
             <Route path="/tareas" element={<TareasPage />} />
+            <Route path="/pizarra" element={<KanbanPage />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
         )}

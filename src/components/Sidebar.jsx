@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { LayoutDashboard, Users, Wrench, Settings, LogOut, Car, Tag, Package, FileText, ClipboardList, ListTodo } from 'lucide-react'
 import { supabase } from '../supabase/client'
+import { Columns } from 'lucide-react'
 
 
 export default function Sidebar() {
@@ -16,6 +17,7 @@ export default function Sidebar() {
     { icon: Tag, label: 'Catálogo Servicios', path: '/servicios' },
     { icon: Package, label: 'Bodega / Inventario', path: '/inventario' },
     { icon: ListTodo, label: 'Tareas y Notas', path: '/tareas' },
+    { icon: Columns, label: 'Pizarra (Kanban)', path: '/pizarra' },
     { icon: ClipboardList, label: 'Plantillas Checklist', path: '/plantillas' },
   ]
   

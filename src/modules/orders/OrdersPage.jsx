@@ -80,12 +80,14 @@ export default function OrdersPage() {
     }
   }
 
+  // --- COLORES SINCRONIZADOS CON KANBAN ---
   const getStatusConfig = (status) => {
     switch(status) {
-      case 'Ingresado': return { color: 'bg-yellow-400', glow: 'shadow-yellow-400/50' }
-      case 'En Proceso': return { color: 'bg-blue-500', glow: 'shadow-blue-500/50' }
-      case 'Terminado': return { color: 'bg-purple-500', glow: 'shadow-purple-500/50' }
-      case 'Entregado': return { color: 'bg-green-500', glow: 'shadow-green-500/50' }
+      case 'Agendado': return { color: 'bg-indigo-400', glow: 'shadow-indigo-400/50' }
+      case 'Recibido': return { color: 'bg-blue-500', glow: 'shadow-blue-500/50' }
+      case 'En Proceso': return { color: 'bg-amber-500', glow: 'shadow-amber-500/50' }
+      case 'Finalizado': return { color: 'bg-green-500', glow: 'shadow-green-500/50' }
+      case 'Entregado': return { color: 'bg-slate-600', glow: 'shadow-slate-600/50' } // Color apagado para historial
       default: return { color: 'bg-slate-400', glow: 'shadow-slate-400/50' }
     }
   }
@@ -97,7 +99,6 @@ export default function OrdersPage() {
     return <DollarSign className="w-3 h-3"/>
   }
 
-  // --- FUNCIONES DEL WIZARD CORREGIDAS (CON MANEJO DE ERRORES) ---
   async function searchClients(term) { 
     setSearchTerm(term); 
     if (term.length < 2) { setClientsResult([]); return }; 
@@ -106,7 +107,6 @@ export default function OrdersPage() {
   }
   
   async function createClient() { 
-    // CORRECCIÓN: Atrapamos el error aquí
     const { data, error } = await supabase.from('clientes').insert([newClientData]).select().single(); 
     if (error) {
       alert('Error al crear cliente. Revisa los datos: ' + error.message)
@@ -127,7 +127,6 @@ export default function OrdersPage() {
   }
 
   async function createCar() { 
-    // CORRECCIÓN: Limpiamos los datos para no enviar textos vacíos a columnas numéricas
     const carToSave = { 
       patente: newCarData.patente.toUpperCase(), 
       marca: newCarData.marca,
@@ -135,7 +134,7 @@ export default function OrdersPage() {
       cliente_id: selectedClient.id,
       vin: newCarData.vin || null,
       color: newCarData.color || null,
-      anio: newCarData.anio ? Number(newCarData.anio) : null // <-- ¡EL FIX ESTÁ AQUÍ!
+      anio: newCarData.anio ? Number(newCarData.anio) : null 
     }; 
     
     const { data, error } = await supabase.from('autos').insert([carToSave]).select().single(); 
@@ -153,7 +152,7 @@ export default function OrdersPage() {
   }
 
   function toggleCarSelection(car) { 
-    if (!car) return; // Protección
+    if (!car) return; 
     if (selectedCars.find(c => c && c.id === car.id)) {
       setSelectedCars(selectedCars.filter(c => c && c.id !== car.id)); 
     } else {
@@ -165,7 +164,8 @@ export default function OrdersPage() {
 
   async function handleFinalizeOrder() { 
     const user = (await supabase.auth.getUser()).data.user; 
-    const { data: orden, error } = await supabase.from('ordenes').insert([{ cliente_id: selectedClient.id, estado: 'Ingresado', estado_pago: 'Pendiente', usuario_id: user.id, total: 0 }]).select().single(); 
+    // CORRECCIÓN: Nace como 'Recibido' en vez de 'Ingresado'
+    const { data: orden, error } = await supabase.from('ordenes').insert([{ cliente_id: selectedClient.id, estado: 'Recibido', estado_pago: 'Pendiente', usuario_id: user.id, total: 0 }]).select().single(); 
     
     if (error) { alert('Error creando orden: ' + error.message); return; }
 
@@ -187,7 +187,7 @@ export default function OrdersPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Órdenes de Trabajo</h1>
-          <p className="text-slate-500 text-sm">Gestión de Taller</p>
+          <p className="text-slate-500 text-sm">Historial completo y gestión de cobros</p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
           <div className="relative flex-1 sm:w-64">
@@ -210,7 +210,7 @@ export default function OrdersPage() {
             const isPagado = orden.estado_pago === 'Pagado'
 
             return (
-              <div key={orden.id} className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between">
+              <div key={orden.id} className={`bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all relative overflow-hidden flex flex-col justify-between ${orden.estado === 'Entregado' ? 'opacity-70 grayscale-[20%]' : ''}`}>
                 
                 <div className={`absolute left-0 top-0 bottom-0 w-1 ${status.color}`}></div>
 
@@ -221,7 +221,7 @@ export default function OrdersPage() {
                     <span className="text-xs font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">Folio: #{orden.id.slice(0,6).toUpperCase()}</span>
                   </div>
                   
-                  {/* SELECTOR DE ESTADO DE TRABAJO */}
+                  {/* SELECTOR DE ESTADO DE TRABAJO SINCRONIZADO */}
                   <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
                     <div className={`w-3 h-3 rounded-full ${status.color} ${status.glow} shadow-sm`}></div>
                     <select 
@@ -229,9 +229,10 @@ export default function OrdersPage() {
                       value={orden.estado}
                       onChange={(e) => updateStatusFromList(orden.id, e.target.value)}
                     >
-                      <option value="Ingresado">Ingresado</option>
+                      <option value="Agendado">Agendado</option>
+                      <option value="Recibido">Recibido</option>
                       <option value="En Proceso">En Proceso</option>
-                      <option value="Terminado">Terminado</option>
+                      <option value="Finalizado">Finalizado</option>
                       <option value="Entregado">Entregado</option>
                     </select>
                   </div>
@@ -241,7 +242,7 @@ export default function OrdersPage() {
                 <div className="flex items-center justify-between gap-2 mb-4 pl-2">
                   <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 p-2 rounded-lg w-fit">
                     <Car className="w-4 h-4 text-slate-400" />
-                    <span className="font-medium">{orden.orden_autos[0]?.count} Auto(s)</span>
+                    <span className="font-medium">{orden.orden_autos[0]?.count || 1} Auto(s)</span>
                   </div>
                   
                   {/* BOTÓN / ETIQUETA DE PAGO */}
@@ -260,7 +261,7 @@ export default function OrdersPage() {
                 <div className="flex justify-between items-center pt-2 border-t border-slate-100 pl-2">
                   <span className="text-xs text-slate-400">{new Date(orden.created_at).toLocaleDateString()}</span>
                   <button onClick={() => navigate(`/ordenes/${orden.id}`)} className="text-sm font-bold text-brand-primary flex items-center gap-1 hover:translate-x-1 transition-transform">
-                    Gestionar <ArrowRight className="w-4 h-4"/>
+                    {orden.estado === 'Entregado' ? 'Ver Historial' : 'Gestionar'} <ArrowRight className="w-4 h-4"/>
                   </button>
                 </div>
               </div>
@@ -349,7 +350,6 @@ export default function OrdersPage() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center bg-blue-50 p-3 rounded text-blue-800 text-sm"><span>Cliente: <strong>{selectedClient.nombre}</strong></span><button onClick={() => { setStep(1); setSelectedClient(null); }} className="underline">Cambiar</button></div>
                   
-                  {/* PROTECCIÓN EN EL RENDER DE LA PATENTE */}
                   {selectedCars.length > 0 && (
                     <div className="flex gap-2 flex-wrap">
                       {selectedCars.map(car => car && (

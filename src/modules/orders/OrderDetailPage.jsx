@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../supabase/client'
 import { PDFDownloadLink } from '@react-pdf/renderer'
 import OrdenPDF from '../../components/OrdenPDF'
-import { Car, ArrowLeft, Fuel, Gauge, FileText, Plus, Trash2, Printer, Loader2, Clock, CheckCircle, Save, MessageCircle, Camera, Image as ImageIcon, X, ClipboardCheck, ChevronDown, ChevronUp } from 'lucide-react'
+import { Car, ArrowLeft, Fuel, Gauge, FileText, Plus, Trash2, Printer, Loader2, Clock, CheckCircle, Save, MessageCircle, Camera, Image as ImageIcon, X, ClipboardCheck, ChevronDown, ChevronUp, Receipt, Search, Box } from 'lucide-react'
 
 export default function OrderDetailPage() {
   const { id } = useParams()
@@ -24,9 +24,20 @@ export default function OrderDetailPage() {
 
   const [activeTab, setActiveTab] = useState(null) 
   const [checklist, setChecklist] = useState({ kilometraje: 0, nivel_combustible: 50, observaciones_recepcion: '' })
-  const [selectedServiceId, setSelectedServiceId] = useState('')
   const [carEdits, setCarEdits] = useState({})
   const fileInputRef = useRef(null) 
+
+  // --- ESTADOS AGREGAR ÍTEMS PRINCIPALES ---
+  const [inventory, setInventory] = useState([])
+  const [addItemType, setAddItemType] = useState('servicio') // Solo 'servicio' o 'manual'
+  const [searchServiceTerm, setSearchServiceTerm] = useState('')
+  const [selectedService, setSelectedService] = useState(null)
+  const [manualItem, setManualItem] = useState({ nombre: '', precio: '' })
+
+  // --- ESTADOS PARA ANIDAR INSUMOS ---
+  const [nestingInItemId, setNestingInItemId] = useState(null)
+  const [searchNestTerm, setSearchNestTerm] = useState('')
+  const [selectedNestInv, setSelectedNestInv] = useState(null)
 
   useEffect(() => {
     fetchData()
@@ -45,9 +56,9 @@ export default function OrderDetailPage() {
     const { data: detailsData } = await supabase.from('orden_detalle').select('*').eq('orden_id', id)
     const { data: servicesData } = await supabase.from('servicios').select('*').order('nombre')
     const { data: photosData } = await supabase.from('orden_fotos').select('*').eq('orden_id', id)
-    
     const { data: plantillasData } = await supabase.from('plantillas_inspeccion').select('*')
     const { data: inspeccionesData } = await supabase.from('orden_inspecciones').select('*').eq('orden_id', id)
+    const { data: invData } = await supabase.from('inventario').select('*').order('nombre')
 
     setOrder(orderData)
     setOrderDetails(detailsData || [])
@@ -55,20 +66,15 @@ export default function OrderDetailPage() {
     setOrderPhotos(photosData || [])
     setPlantillas(plantillasData || [])
     setInspecciones(inspeccionesData || [])
+    setInventory(invData || [])
 
     const initialEdits = {}
     if (orderData.orden_autos) {
       orderData.orden_autos.forEach(rel => {
         initialEdits[rel.autos.id] = {
-          anio: rel.autos.anio || '',
-          vin: rel.autos.vin || '',
-          color: rel.autos.color || '',
-          bateria_mes: rel.autos.bateria_mes || '',
-          bateria_anio: rel.autos.bateria_anio || '',
-          dot_di: rel.autos.dot_di || '',
-          dot_dd: rel.autos.dot_dd || '',
-          dot_ti: rel.autos.dot_ti || '',
-          dot_td: rel.autos.dot_td || ''
+          anio: rel.autos.anio || '', vin: rel.autos.vin || '', color: rel.autos.color || '',
+          bateria_mes: rel.autos.bateria_mes || '', bateria_anio: rel.autos.bateria_anio || '',
+          dot_di: rel.autos.dot_di || '', dot_dd: rel.autos.dot_dd || '', dot_ti: rel.autos.dot_ti || '', dot_td: rel.autos.dot_td || ''
         }
       })
     }
@@ -82,31 +88,153 @@ export default function OrderDetailPage() {
 
   const setupActiveCar = (rel, allInspections = inspecciones) => {
     setActiveTab(rel.autos.id)
-    setChecklist({
-      kilometraje: rel.kilometraje || 0,
-      nivel_combustible: rel.nivel_combustible || 50,
-      observaciones_recepcion: rel.observaciones_recepcion || ''
-    })
+    setChecklist({ kilometraje: rel.kilometraje || 0, nivel_combustible: rel.nivel_combustible || 50, observaciones_recepcion: rel.observaciones_recepcion || '' })
     const inspeccionDelAuto = allInspections.find(i => i.auto_id === rel.autos.id)
     setActiveInspeccionData(inspeccionDelAuto || null)
+  }
+
+  // --- LÓGICA DE ITEMS PRINCIPALES ---
+  async function addItem() {
+    let newItem = { orden_id: order.id, auto_id: activeTab, cantidad: 1, insumos_anidados: [] }
+
+    if (addItemType === 'servicio') {
+      if (!selectedService) return alert('Busca y selecciona un servicio de la lista primero.')
+      const mo = Number(selectedService.precio_mano_obra) || 0; const rep = Number(selectedService.precio_repuestos) || 0;
+      newItem = { ...newItem, tipo_item: 'servicio', servicio_nombre: selectedService.nombre, precio_unitario: mo + rep, total_linea: mo + rep }
+    
+    } else if (addItemType === 'manual') {
+      if (!manualItem.nombre || !manualItem.precio) return alert('Completa nombre y precio')
+      const precioManual = Number(manualItem.precio) || 0;
+      newItem = { ...newItem, tipo_item: 'manual', servicio_nombre: manualItem.nombre, precio_unitario: precioManual, total_linea: precioManual }
+    }
+
+    const { data, error } = await supabase.from('orden_detalle').insert([newItem]).select().single()
+    if (error) return alert('Error en la base de datos: ' + error.message)
+
+    if (data) {
+      const newDetails = [...orderDetails, data]
+      setOrderDetails(newDetails)
+      updateOrderTotal(newDetails)
+    }
+    
+    setSearchServiceTerm(''); setSelectedService(null); setManualItem({nombre: '', precio: ''})
+  }
+
+  async function deleteItem(itemId) {
+    if(!confirm('¿Borrar este ítem de la orden? (Se devolverán los insumos anidados a bodega)')) return
+    const itemToDelete = orderDetails.find(d => d.id === itemId)
+
+    // Devolver insumos anidados a bodega
+    if (itemToDelete?.insumos_anidados?.length > 0) {
+      for (const anidado of itemToDelete.insumos_anidados) {
+        const invAnidado = inventory.find(i => i.id === anidado.inventario_id)
+        if (invAnidado) {
+          const restoredStockAnidado = (Number(invAnidado.stock_actual) || 0) + 1
+          await supabase.from('inventario').update({ stock_actual: restoredStockAnidado }).eq('id', invAnidado.id)
+          setInventory(prev => prev.map(i => i.id === invAnidado.id ? { ...i, stock_actual: restoredStockAnidado } : i))
+        }
+      }
+    }
+
+    await supabase.from('orden_detalle').delete().eq('id', itemId)
+    const newDetails = orderDetails.filter(d => d.id !== itemId)
+    setOrderDetails(newDetails)
+    updateOrderTotal(newDetails)
+  }
+
+  // --- LÓGICA DE INSUMOS ANIDADOS (LA MAGIA) ---
+  async function addNestedInsumo(parentDetailId) {
+    if (!selectedNestInv) return alert('Busca y selecciona un repuesto primero')
+    
+    const parentDetail = orderDetails.find(d => d.id === parentDetailId)
+    const currentAnidados = parentDetail.insumos_anidados || []
+    const precioInsumo = Number(selectedNestInv.precio_venta) || 0
+
+    const newInsumo = {
+      id: Date.now().toString(),
+      inventario_id: selectedNestInv.id,
+      nombre: selectedNestInv.nombre,
+      categoria: selectedNestInv.categoria || 'Repuesto',
+      precio: precioInsumo
+    }
+
+    const newAnidados = [...currentAnidados, newInsumo]
+    const newTotalLinea = (Number(parentDetail.total_linea) || 0) + precioInsumo
+
+    const { error } = await supabase.from('orden_detalle').update({ 
+      insumos_anidados: newAnidados, 
+      total_linea: newTotalLinea 
+    }).eq('id', parentDetailId)
+
+    if (error) return alert('Error al guardar el insumo: ' + error.message)
+
+    const newStock = (Number(selectedNestInv.stock_actual) || 0) - 1
+    await supabase.from('inventario').update({ stock_actual: newStock }).eq('id', selectedNestInv.id)
+    setInventory(inventory.map(i => i.id === selectedNestInv.id ? { ...i, stock_actual: newStock } : i))
+
+    const newDetails = orderDetails.map(d => d.id === parentDetailId ? { ...d, insumos_anidados: newAnidados, total_linea: newTotalLinea } : d)
+    setOrderDetails(newDetails)
+    updateOrderTotal(newDetails)
+    
+    setSearchNestTerm('')
+    setSelectedNestInv(null)
+    setNestingInItemId(null)
+  }
+
+  async function removeNestedInsumo(parentDetailId, insumoIdToRemove) {
+    if (!confirm('¿Quitar este repuesto y devolverlo a bodega?')) return
+    
+    const parentDetail = orderDetails.find(d => d.id === parentDetailId)
+    const insumoToRemove = parentDetail.insumos_anidados.find(i => i.id === insumoIdToRemove)
+    const newAnidados = parentDetail.insumos_anidados.filter(i => i.id !== insumoIdToRemove)
+    const newTotalLinea = (Number(parentDetail.total_linea) || 0) - (Number(insumoToRemove.precio) || 0)
+
+    const { error } = await supabase.from('orden_detalle').update({ 
+      insumos_anidados: newAnidados, 
+      total_linea: newTotalLinea 
+    }).eq('id', parentDetailId)
+
+    if (error) return alert('Error al quitar insumo: ' + error.message)
+
+    const invItem = inventory.find(i => i.id === insumoToRemove.inventario_id)
+    if (invItem) {
+      const restoredStock = (Number(invItem.stock_actual) || 0) + 1
+      await supabase.from('inventario').update({ stock_actual: restoredStock }).eq('id', invItem.id)
+      setInventory(inventory.map(i => i.id === invItem.id ? { ...i, stock_actual: restoredStock } : i))
+    }
+
+    const newDetails = orderDetails.map(d => d.id === parentDetailId ? { ...d, insumos_anidados: newAnidados, total_linea: newTotalLinea } : d)
+    setOrderDetails(newDetails)
+    updateOrderTotal(newDetails)
+  }
+
+  // --- FILTROS BUSCADORES ---
+  const filteredServices = searchServiceTerm.length > 1 && !selectedService ? catalogServices.filter(s => s.nombre.toLowerCase().includes(searchServiceTerm.toLowerCase())) : []
+  const filteredNestInventory = searchNestTerm.length > 1 && !selectedNestInv ? inventory.filter(i => i.nombre.toLowerCase().includes(searchNestTerm.toLowerCase()) || (i.sku && i.sku.toLowerCase().includes(searchNestTerm.toLowerCase()))) : []
+
+  // --- RESTO (IVA, Totales) ---
+  async function toggleIva() {
+    const newValue = !order.incluye_iva
+    const sumItems = orderDetails.reduce((sum, d) => sum + d.total_linea, 0)
+    const newTotal = newValue ? Math.round(sumItems * 1.19) : sumItems
+    const { error } = await supabase.from('ordenes').update({ incluye_iva: newValue, total: newTotal }).eq('id', order.id)
+    if (!error) setOrder({ ...order, incluye_iva: newValue, total: newTotal })
+  }
+
+  async function updateOrderTotal(details, applyIva = order.incluye_iva) {
+    const sumItems = details.reduce((sum, d) => sum + d.total_linea, 0)
+    const newTotal = applyIva ? Math.round(sumItems * 1.19) : sumItems
+    await supabase.from('ordenes').update({ total: newTotal }).eq('id', order.id)
+    setOrder(prev => ({ ...prev, total: newTotal }))
   }
 
   const iniciarInspeccion = async () => {
     if (!selectedPlantillaId) return alert('Selecciona una plantilla primero')
     const template = plantillas.find(p => p.id === selectedPlantillaId)
-    
-    const nuevosResultados = template.estructura.map(cat => ({
-      id: cat.id,
-      titulo: cat.titulo,
-      items: cat.items.map(item => ({ nombre: item, estado: null, observacion: '', foto: null }))
-    }))
-
+    const nuevosResultados = template.estructura.map(cat => ({ id: cat.id, titulo: cat.titulo, items: cat.items.map(item => ({ nombre: item, estado: null, observacion: '', foto: null })) }))
     const newInspeccion = { orden_id: order.id, auto_id: activeTab, plantilla_id: template.id, resultados: nuevosResultados }
     const { data, error } = await supabase.from('orden_inspecciones').insert([newInspeccion]).select().single()
-    if (error) return alert('Error al iniciar inspección: ' + error.message)
-    
-    setInspecciones([...inspecciones, data])
-    setActiveInspeccionData(data)
+    if (!error) { setInspecciones([...inspecciones, data]); setActiveInspeccionData(data) }
   }
 
   const updateInspeccionItem = (catIndex, itemIndex, field, value) => {
@@ -120,16 +248,11 @@ export default function OrderDetailPage() {
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onload = (e) => {
-        const img = new Image();
-        img.src = e.target.result;
+        const img = new Image(); img.src = e.target.result;
         img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 800;
-          const scaleSize = MAX_WIDTH / img.width;
-          canvas.width = MAX_WIDTH;
-          canvas.height = img.height * scaleSize;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const canvas = document.createElement('canvas'); const MAX_WIDTH = 800; const scaleSize = MAX_WIDTH / img.width;
+          canvas.width = MAX_WIDTH; canvas.height = img.height * scaleSize;
+          const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           resolve(canvas.toDataURL('image/jpeg', 0.6));
         };
       };
@@ -137,23 +260,20 @@ export default function OrderDetailPage() {
   };
 
   const handleFotoChecklist = async (catIndex, itemIndex, e) => {
-    const file = e.target.files[0]
-    if (!file) return
+    const file = e.target.files[0]; if (!file) return
     const compressedBase64 = await resizeImage(file)
     updateInspeccionItem(catIndex, itemIndex, 'foto', compressedBase64)
   }
 
   const guardarInspeccion = async () => {
     const { error } = await supabase.from('orden_inspecciones').update({ resultados: activeInspeccionData.resultados }).eq('id', activeInspeccionData.id)
-    if (error) alert('Error guardando inspección')
-    else alert('✅ Informe de Inspección guardado correctamente')
+    if (!error) alert('✅ Informe de Inspección guardado correctamente')
   }
 
   const borrarInspeccion = async () => {
     if (!confirm('¿Estás seguro de borrar este informe?')) return
     await supabase.from('orden_inspecciones').delete().eq('id', activeInspeccionData.id)
-    setInspecciones(inspecciones.filter(i => i.id !== activeInspeccionData.id))
-    setActiveInspeccionData(null)
+    setInspecciones(inspecciones.filter(i => i.id !== activeInspeccionData.id)); setActiveInspeccionData(null)
   }
 
   async function deleteOrder() {
@@ -163,72 +283,34 @@ export default function OrderDetailPage() {
     await supabase.from('orden_detalle').delete().eq('orden_id', order.id)
     await supabase.from('orden_autos').delete().eq('orden_id', order.id)
     const { error } = await supabase.from('ordenes').delete().eq('id', order.id)
-    if (error) alert('Error: ' + error.message)
-    else navigate('/ordenes')
+    if (!error) navigate('/ordenes')
   }
 
   async function saveChecklist() {
     const rel = order.orden_autos.find(r => r.autos.id === activeTab)
-    const { error: errorOrden } = await supabase.from('orden_autos').update(checklist).eq('id', rel.id)
-    const { error: errorAuto } = await supabase.from('autos').update({ kilometraje_actual: checklist.kilometraje }).eq('id', activeTab)
-
-    if (errorOrden || errorAuto) alert('Error al guardar el checklist')
-    else alert('✅ Recepción guardada y Kilometraje actualizado')
+    const { error: e1 } = await supabase.from('orden_autos').update(checklist).eq('id', rel.id)
+    const { error: e2 } = await supabase.from('autos').update({ kilometraje_actual: checklist.kilometraje }).eq('id', activeTab)
+    if (!e1 && !e2) alert('✅ Recepción guardada')
   }
 
   async function updateCarDetails(carId) {
-    const dataToSave = carEdits[carId]
-    const { error } = await supabase.from('autos').update(dataToSave).eq('id', carId)
-    if (error) alert('Error guardando datos del auto')
-    else alert('✅ Datos del vehículo actualizados')
-  }
-
-  async function addItem() {
-    if (!selectedServiceId) return
-    const service = catalogServices.find(s => s.id === selectedServiceId)
-    const newItem = { orden_id: order.id, auto_id: activeTab, servicio_nombre: service.nombre, precio_unitario: service.precio_mano_obra + service.precio_repuestos, total_linea: service.precio_mano_obra + service.precio_repuestos, cantidad: 1 }
-    const { data } = await supabase.from('orden_detalle').insert([newItem]).select().single()
-    const newDetails = [...orderDetails, data]
-    setOrderDetails(newDetails)
-    updateOrderTotal(newDetails)
-    setSelectedServiceId('')
-  }
-
-  async function deleteItem(itemId) {
-    if(!confirm('¿Borrar servicio?')) return
-    await supabase.from('orden_detalle').delete().eq('id', itemId)
-    const newDetails = orderDetails.filter(d => d.id !== itemId)
-    setOrderDetails(newDetails)
-    updateOrderTotal(newDetails)
-  }
-
-  async function updateOrderTotal(details) {
-    const newTotal = details.reduce((sum, d) => sum + d.total_linea, 0)
-    await supabase.from('ordenes').update({ total: newTotal }).eq('id', order.id)
-    setOrder({ ...order, total: newTotal })
+    const { error } = await supabase.from('autos').update(carEdits[carId]).eq('id', carId)
+    if (!error) alert('✅ Datos del vehículo actualizados')
   }
 
   const handlePhotoUpload = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
+    const file = e.target.files[0]; if (!file) return
     setUploadingPhoto(true)
     try {
       const fileExt = file.name.split('.').pop()
-      const fileName = `${order.id}_${activeTab}_${Math.random()}.${fileExt}`
-      const filePath = `reparaciones/${fileName}`
-      const { error: uploadError } = await supabase.storage.from('fotos-taller').upload(filePath, file)
-      if (uploadError) throw uploadError
+      const filePath = `reparaciones/${order.id}_${activeTab}_${Math.random()}.${fileExt}`
+      await supabase.storage.from('fotos-taller').upload(filePath, file)
       const { data: { publicUrl } } = supabase.storage.from('fotos-taller').getPublicUrl(filePath)
       const newPhoto = { orden_id: order.id, auto_id: activeTab, url: publicUrl, descripcion: 'Evidencia general' }
-      const { data, error: dbError } = await supabase.from('orden_fotos').insert([newPhoto]).select().single()
-      if (dbError) throw dbError
+      const { data } = await supabase.from('orden_fotos').insert([newPhoto]).select().single()
       setOrderPhotos([...orderPhotos, data])
-    } catch (error) {
-      alert('Error al subir la foto: ' + error.message)
-    } finally {
-      setUploadingPhoto(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
+    } catch (error) { alert('Error: ' + error.message) } 
+    finally { setUploadingPhoto(false); if (fileInputRef.current) fileInputRef.current.value = '' }
   }
 
   async function deletePhoto(photoId) {
@@ -238,14 +320,12 @@ export default function OrderDetailPage() {
   }
 
   const handleSeguimiento = () => {
-    if (!order.clientes?.telefono) { alert('⚠️ El cliente no tiene un teléfono registrado.'); return; }
-    let phone = order.clientes.telefono.replace(/\D/g, ''); 
-    if (phone.length === 9) phone = '56' + phone;
+    if (!order.clientes?.telefono) return alert('⚠️ El cliente no tiene teléfono.')
+    let phone = order.clientes.telefono.replace(/\D/g, ''); if (phone.length === 9) phone = '56' + phone;
     const patentes = order.orden_autos.map(rel => rel.autos.patente).join(', ');
     const trackingUrl = `${window.location.origin}/seguimiento/${order.id}`;
-    const mensaje = `Hola *${order.clientes.nombre}*, somos del taller Multifrenos 🚗🔧.\n\nTe informamos que tu orden de trabajo para el vehículo patente *${patentes}* se encuentra en estado: *${order.estado}*.\n\nPuedes ver el detalle de tu presupuesto y hacer seguimiento en tiempo real haciendo clic en este enlace seguro:\n${trackingUrl}\n\n¡Gracias por confiar en nosotros!`;
-    const whatsappUrl = `https://wa.me/${phone}?text=${encodeURIComponent(mensaje)}`;
-    window.open(whatsappUrl, '_blank');
+    const mensaje = `Hola *${order.clientes.nombre}*, somos del taller Multifrenos 🚗🔧.\nTu orden (Patente: *${patentes}*) está en estado: *${order.estado}*.\nPuedes ver el presupuesto aquí:\n${trackingUrl}`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(mensaje)}`, '_blank');
   }
 
   const money = (val) => new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(val)
@@ -260,6 +340,7 @@ export default function OrderDetailPage() {
   return (
     <div className="space-y-6 pb-20">
       
+      {/* HEADER Y TABS */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
         <div className="flex items-center gap-4 w-full md:w-auto">
           <button onClick={() => navigate('/ordenes')} className="p-2 hover:bg-slate-100 rounded-full"><ArrowLeft className="w-6 h-6 text-slate-500" /></button>
@@ -273,26 +354,17 @@ export default function OrderDetailPage() {
 
       <div className="flex gap-2 overflow-x-auto pb-2 border-b border-slate-200">
         {order.orden_autos.map((rel) => (
-          <button
-            key={rel.id}
-            onClick={() => setupActiveCar(rel)}
-            className={`flex items-center gap-2 px-6 py-3 rounded-t-xl border-b-2 font-bold transition-all whitespace-nowrap ${activeTab === rel.autos.id ? 'border-brand-primary text-brand-primary bg-white shadow-sm' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}
-          >
-            <Car className="w-4 h-4" /> {rel.autos.patente}
-          </button>
+          <button key={rel.id} onClick={() => setupActiveCar(rel)} className={`flex items-center gap-2 px-6 py-3 rounded-t-xl border-b-2 font-bold transition-all whitespace-nowrap ${activeTab === rel.autos.id ? 'border-brand-primary text-brand-primary bg-white shadow-sm' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><Car className="w-4 h-4" /> {rel.autos.patente}</button>
         ))}
-        <button
-          onClick={() => setActiveTab('resumen')}
-          className={`flex items-center gap-2 px-6 py-3 rounded-t-xl border-b-2 font-bold transition-all whitespace-nowrap ml-auto ${activeTab === 'resumen' ? 'border-green-500 text-green-600 bg-white shadow-sm' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}
-        >
-          <CheckCircle className="w-4 h-4" /> Resumen y Entrega
-        </button>
+        <button onClick={() => setActiveTab('resumen')} className={`flex items-center gap-2 px-6 py-3 rounded-t-xl border-b-2 font-bold transition-all whitespace-nowrap ml-auto ${activeTab === 'resumen' ? 'border-green-500 text-green-600 bg-white shadow-sm' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><CheckCircle className="w-4 h-4" /> Resumen y Entrega</button>
       </div>
 
       {activeCar && activeTab !== 'resumen' && (
         <div className="space-y-6 animate-fade-in">
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* RECEPCIÓN BÁSICA */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
               <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2 border-b pb-2"><FileText className="w-5 h-5 text-slate-400" /> Recepción Básica</h3>
               <div className="space-y-4">
@@ -305,17 +377,124 @@ export default function OrderDetailPage() {
               </div>
             </div>
 
+            {/* --- CAJA DE CARGOS --- */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
-              <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center justify-between border-b pb-2"><span className="flex items-center gap-2"><Clock className="w-5 h-5 text-slate-400" /> Servicios</span><span className="text-green-600 font-mono text-xl">{money(orderDetails.filter(d => d.auto_id === activeTab).reduce((s, i) => s + i.total_linea, 0))}</span></h3>
-              <div className="flex gap-2 mb-4"><select className="flex-1 p-2 border rounded text-sm bg-white" value={selectedServiceId} onChange={e => setSelectedServiceId(e.target.value)}><option value="">+ Agregar Servicio...</option>{catalogServices.map(s => <option key={s.id} value={s.id}>{s.nombre} ({money(s.precio_mano_obra + s.precio_repuestos)})</option>)}</select><button onClick={addItem} className="bg-brand-primary text-white px-3 rounded hover:bg-blue-700"><Plus className="w-5 h-5" /></button></div>
-              <div className="flex-1 space-y-2 overflow-y-auto max-h-[300px]">
-                {activeCarItems.length === 0 && <p className="text-slate-400 text-center italic mt-4">Sin items</p>}
-                {activeCarItems.map((item) => (<div key={item.id} className="flex justify-between items-center p-3 bg-slate-50 rounded border border-slate-100 group hover:border-blue-200 transition-colors"><span className="font-medium text-sm text-slate-700">{item.servicio_nombre}</span><div className="flex items-center gap-3"><span className="font-mono font-bold text-slate-900">{money(item.total_linea)}</span><button onClick={() => deleteItem(item.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="w-4 h-4" /></button></div></div>))}
+              <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center justify-between border-b pb-2">
+                <span className="flex items-center gap-2"><Clock className="w-5 h-5 text-slate-400" /> Cargos</span>
+                <span className="text-green-600 font-mono text-xl">{money(activeCarItems.reduce((s, i) => s + i.total_linea, 0) * (order.incluye_iva ? 1.19 : 1))}</span>
+              </h3>
+              
+              {/* BUSCADOR PRINCIPAL */}
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 mb-4">
+                <div className="flex gap-1 mb-3 bg-slate-200/50 p-1 rounded-lg">
+                  <button onClick={() => setAddItemType('servicio')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${addItemType === 'servicio' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>Servicio Libre</button>
+                  <button onClick={() => setAddItemType('manual')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${addItemType === 'manual' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>Cargo Manual</button>
+                </div>
+
+                {addItemType === 'servicio' && (
+                  <div className="relative animate-fade-in">
+                    <div className="flex gap-2 relative z-20">
+                      <div className="relative flex-1"><Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400"/><input placeholder="Buscar servicio base (ej: Afinamiento)..." className="w-full pl-9 p-2 border border-blue-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" value={selectedService ? selectedService.nombre : searchServiceTerm} onChange={e => { setSearchServiceTerm(e.target.value); setSelectedService(null); }}/></div>
+                      <button onClick={addItem} disabled={!selectedService} className="bg-blue-600 text-white px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-bold flex items-center gap-1"><Plus className="w-4 h-4" /> Add</button>
+                    </div>
+                    {filteredServices.length > 0 && (
+                      <div className="absolute top-full left-0 right-16 mt-1 bg-white border border-slate-200 shadow-xl rounded-lg max-h-48 overflow-y-auto z-30">
+                        {filteredServices.map(s => (
+                          <div key={s.id} onClick={() => { setSelectedService(s); setSearchServiceTerm(s.nombre); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 flex justify-between items-center">
+                            <div><p className="font-bold text-sm text-slate-800">{s.nombre}</p><p className="text-[10px] text-slate-500">{s.categoria}</p></div>
+                            <span className="font-mono text-xs font-bold text-blue-700">{money((Number(s.precio_mano_obra)||0) + (Number(s.precio_repuestos)||0))}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {addItemType === 'manual' && (
+                  <div className="flex gap-2 animate-fade-in"><input placeholder="Ej: Amarras..." className="flex-1 p-2 border border-orange-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-orange-500" value={manualItem.nombre} onChange={e => setManualItem({...manualItem, nombre: e.target.value})}/><input type="number" placeholder="$ Precio" className="w-28 p-2 border border-orange-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-orange-500" value={manualItem.precio} onChange={e => setManualItem({...manualItem, precio: e.target.value})}/><button onClick={addItem} className="bg-orange-500 text-white px-3 rounded-lg hover:bg-orange-600 font-bold flex items-center gap-1"><Plus className="w-4 h-4" /> Add</button></div>
+                )}
+              </div>
+
+              {/* LISTA DE ÍTEMS COBRADOS (CON ANIDACIÓN) */}
+              <div className="flex-1 space-y-3 overflow-y-auto max-h-[300px] border-t border-slate-100 pt-4 pb-24">
+                {activeCarItems.length === 0 && <p className="text-slate-400 text-center italic mt-4 text-sm">Sin cargos registrados</p>}
+                
+                {activeCarItems.map((item) => (
+                  // CORRECCIÓN: Quitamos overflow-hidden y dejamos relative
+                  <div key={item.id} className="bg-white rounded-lg border border-slate-200 shadow-sm relative">
+                    <div className="flex justify-between items-start p-3 bg-slate-50 rounded-t-lg">
+                      <div className="flex-1">
+                        <span className="font-bold text-sm text-slate-800 block leading-tight">{item.servicio_nombre}</span>
+                        <div className="flex gap-2 mt-1">
+                          {item.tipo_item === 'manual' && <span className="text-[9px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Manual</span>}
+                          
+                          <button onClick={() => setNestingInItemId(nestingInItemId === item.id ? null : item.id)} className="text-[10px] text-blue-600 font-bold uppercase flex items-center gap-1 hover:text-blue-800 transition-colors">
+                            <Box className="w-3 h-3"/> + Añadir Insumo
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <span className="block text-[9px] text-slate-400 font-bold uppercase">Subtotal</span>
+                          <span className="font-mono font-black text-slate-900">{money(item.total_linea)}</span>
+                        </div>
+                        <button onClick={() => deleteItem(item.id)} className="text-slate-300 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    </div>
+
+                    {/* BUSCADOR DE ANIDACIÓN */}
+                    {nestingInItemId === item.id && (
+                      <div className="p-3 bg-blue-50 border-t border-blue-100 rounded-b-lg">
+                        <p className="text-[10px] font-bold text-blue-800 uppercase mb-2">Buscando Insumo para: {item.servicio_nombre}</p>
+                        <div className="flex gap-2 relative">
+                          <div className="relative flex-1">
+                            <Search className="w-4 h-4 absolute left-3 top-2.5 text-blue-400"/>
+                            <input autoFocus placeholder="Buscar repuesto..." className="w-full pl-9 p-2 border border-blue-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500" value={selectedNestInv ? selectedNestInv.nombre : searchNestTerm} onChange={e => { setSearchNestTerm(e.target.value); setSelectedNestInv(null); }} />
+                          </div>
+                          <button onClick={() => addNestedInsumo(item.id)} disabled={!selectedNestInv} className="bg-blue-600 text-white px-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-bold text-sm">Vincular</button>
+                        </div>
+                        
+                        {/* Resultados Flotantes del Insumo Anidado (Ahora sí se ven) */}
+                        {filteredNestInventory.length > 0 && (
+                          <div className="absolute top-full left-3 right-3 mt-1 bg-white border border-slate-200 shadow-2xl rounded-lg max-h-40 overflow-y-auto z-50">
+                            {filteredNestInventory.map(i => (
+                              <div key={i.id} onClick={() => { setSelectedNestInv(i); setSearchNestTerm(i.nombre); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 flex justify-between items-center">
+                                <div>
+                                  <p className="font-bold text-sm text-slate-800">{i.nombre}</p>
+                                  <p className="text-[10px] text-slate-500">{i.sku || 'Sin código'}</p>
+                                </div>
+                                <div className="text-right">
+                                  {/* CORRECCIÓN: Validamos NaN al renderizar */}
+                                  <span className="font-mono text-[10px] font-bold text-blue-700 block">{money(Number(i.precio_venta) || 0)}</span>
+                                  <span className={`text-[9px] font-bold ${(Number(i.stock_actual) || 0) > 0 ? 'text-green-600' : 'text-red-500'}`}>Stock: {Number(i.stock_actual) || 0}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* RENDER INSUMOS ANIDADOS */}
+                    {item.insumos_anidados && item.insumos_anidados.length > 0 && (
+                      <div className="p-2 bg-white border-t border-slate-100 space-y-1 rounded-b-lg">
+                        {item.insumos_anidados.map(insumo => (
+                          <div key={insumo.id} className="flex justify-between items-center bg-slate-50 px-2 py-1.5 rounded border border-slate-100">
+                            <span className="text-xs text-slate-600 flex items-center gap-1.5"><Box className="w-3 h-3 text-slate-400"/> {insumo.nombre}</span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-[10px] font-mono font-bold text-slate-500">+{money(insumo.precio)}</span>
+                              <button onClick={() => removeNestedInsumo(item.id, insumo.id)} className="text-slate-300 hover:text-red-500"><X className="w-3 h-3"/></button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
 
-          {/* INSPECCIÓN TÉCNICA Y VITALES */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
               <h3 className="font-bold text-lg flex items-center gap-2"><ClipboardCheck className="w-5 h-5"/> Informe Técnico de Inspección</h3>
@@ -364,9 +543,7 @@ export default function OrderDetailPage() {
                       {plantillas.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                     </select>
                   </div>
-                  <button onClick={iniciarInspeccion} className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold shadow-md hover:bg-blue-700 whitespace-nowrap h-fit">
-                    Comenzar
-                  </button>
+                  <button onClick={iniciarInspeccion} className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold shadow-md hover:bg-blue-700 whitespace-nowrap h-fit">Comenzar</button>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -432,7 +609,6 @@ export default function OrderDetailPage() {
                 {uploadingPhoto ? <Loader2 className="w-4 h-4 animate-spin"/> : <Camera className="w-4 h-4"/>} Subir Foto Suelta
               </button>
             </div>
-
             {activeCarPhotos.length === 0 ? (
               <div className="text-center py-8 bg-slate-50 rounded-lg border-2 border-dashed border-slate-200">
                 <ImageIcon className="w-10 h-10 text-slate-300 mx-auto mb-2" />
@@ -455,9 +631,17 @@ export default function OrderDetailPage() {
       {/* CONTENIDO 2: PESTAÑA RESUMEN */}
       {activeTab === 'resumen' && (
         <div className="space-y-6 animate-fade-in">
-          <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 flex flex-col items-center justify-center text-center">
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">Total Orden: {money(order.total)}</h2>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center w-full mt-4">
+          <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 flex flex-col items-center justify-center text-center relative overflow-hidden">
+            <Receipt className="absolute -right-6 -top-6 w-32 h-32 text-slate-50 opacity-50 pointer-events-none" />
+            <h2 className="text-3xl font-black text-slate-800 mb-2 tracking-tight">{money(order.total)}</h2>
+            <p className="text-slate-500 text-sm mb-6 font-medium">Total de la Orden de Trabajo</p>
+            <div className="flex items-center gap-3 bg-slate-50 px-5 py-3 rounded-2xl border border-slate-200 mb-6">
+              <span className="text-sm font-bold text-slate-700">Factura (Incluir 19% IVA)</span>
+              <button onClick={toggleIva} className={`w-14 h-7 rounded-full relative transition-colors shadow-inner ${order.incluye_iva ? 'bg-blue-600' : 'bg-slate-300'}`}>
+                <div className={`w-5 h-5 bg-white rounded-full absolute top-1 transition-all shadow-md ${order.incluye_iva ? 'left-8' : 'left-1'}`}></div>
+              </button>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center w-full relative z-10">
               <button onClick={handleSeguimiento} className="bg-green-500 hover:bg-green-600 text-white px-6 py-4 rounded-xl flex items-center justify-center gap-3 font-bold text-lg shadow-xl shadow-green-500/30 transition-transform active:scale-95 w-full sm:w-auto">
                 <MessageCircle className="w-6 h-6" /> Enviar Seguimiento
               </button>
@@ -468,87 +652,67 @@ export default function OrderDetailPage() {
             {order.orden_autos.map((rel) => {
               const carId = rel.autos.id;
               const repuestosDelAuto = orderDetails.filter(d => d.auto_id === carId);
-              const totalAuto = repuestosDelAuto.reduce((s, d) => s + d.total_linea, 0);
+              const sumItemsAuto = repuestosDelAuto.reduce((s, d) => s + d.total_linea, 0);
+              const impuestosAuto = order.incluye_iva ? Math.round(sumItemsAuto * 0.19) : 0;
+              const totalAuto = sumItemsAuto + impuestosAuto;
               const fotosDelAuto = orderPhotos.filter(p => p.auto_id === carId);
               const informeDelAuto = inspecciones.find(i => i.auto_id === carId);
 
+              // --- PREPARACIÓN DE DATOS PARA EL PDF (Ocultando Repuestos) ---
+              const reparacionesProcesadas = repuestosDelAuto.map(rep => {
+                let textoFinal = rep.servicio_nombre;
+                if (rep.insumos_anidados && rep.insumos_anidados.length > 0) {
+                  const categoriasUnicas = [...new Set(rep.insumos_anidados.map(i => i.categoria))].join(', ');
+                  textoFinal = `${rep.servicio_nombre} (Incluye: ${categoriasUnicas})`;
+                }
+                return { texto: textoFinal, precio: rep.total_linea }
+              });
+
               const datosPDF = {
                 vehiculo: {
-                  orden: order.id.slice(0,6).toUpperCase(),
-                  cliente: order.clientes?.nombre,
-                  rut: order.clientes?.rut,
-                  telefono: order.clientes?.telefono,
-                  patente: rel.autos.patente,
-                  marca: rel.autos.marca,
-                  modelo: rel.autos.modelo,
-                  anio: carEdits[carId]?.anio || rel.autos.anio || '',
-                  vin: carEdits[carId]?.vin || rel.autos.vin || '',
-                  km: rel.kilometraje || '0', 
-                  combustible: rel.nivel_combustible || '50', 
-                  observaciones: rel.observaciones_recepcion || '', 
-                  fecha: new Date(order.created_at).toLocaleDateString('es-CL'),
-                  tecnico: 'Taller Multifrenos',
+                  orden: order.id.slice(0,6).toUpperCase(), cliente: order.clientes?.nombre, rut: order.clientes?.rut,
+                  telefono: order.clientes?.telefono, patente: rel.autos.patente, marca: rel.autos.marca, modelo: rel.autos.modelo,
+                  anio: carEdits[carId]?.anio || rel.autos.anio || '', vin: carEdits[carId]?.vin || rel.autos.vin || '',
+                  km: rel.kilometraje || '0', combustible: rel.nivel_combustible || '50', observaciones: rel.observaciones_recepcion || '', 
+                  fecha: new Date(order.created_at).toLocaleDateString('es-CL'), tecnico: 'Taller Multifrenos',
                   bateria: (carEdits[carId]?.bateria_mes && carEdits[carId]?.bateria_anio) ? `${carEdits[carId]?.bateria_mes} / ${carEdits[carId]?.bateria_anio}` : 'Sin Reg.',
                   dot_del: `Izq: ${carEdits[carId]?.dot_di || '-'} | Der: ${carEdits[carId]?.dot_dd || '-'}`,
                   dot_tras: `Izq: ${carEdits[carId]?.dot_ti || '-'} | Der: ${carEdits[carId]?.dot_td || '-'}`
                 },
-                reparaciones: repuestosDelAuto.map(rep => ({ texto: rep.servicio_nombre, precio: rep.total_linea })),
-                fotos: fotosDelAuto,
-                inspeccion: informeDelAuto ? informeDelAuto.resultados : null,
-                total: totalAuto,
-                impuestos: 0 
+                reparaciones: reparacionesProcesadas,
+                fotos: fotosDelAuto, inspeccion: informeDelAuto ? informeDelAuto.resultados : null,
+                total: totalAuto, impuestos: impuestosAuto 
               };
 
               return (
                 <div key={carId} className="bg-slate-50 p-6 rounded-xl border border-slate-200">
                   <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-200">
+                    <div className="flex items-center gap-2"><Car className="w-5 h-5 text-slate-500" /><span className="font-bold font-mono text-lg">{rel.autos.patente}</span></div>
                     <div className="flex items-center gap-2">
-                      <Car className="w-5 h-5 text-slate-500" />
-                      <span className="font-bold font-mono text-lg">{rel.autos.patente}</span>
-                    </div>
-                    
-                    {/* --- AQUÍ ESTÁ EL NUEVO BOTONCITO DOBLE --- */}
-                    <div className="flex items-center gap-2">
-                      <PDFDownloadLink 
-                        document={<OrdenPDF orden={datosPDF} modo="impresion" />} 
-                        fileName={`OrdenFisica_${rel.autos.patente}.pdf`} 
-                        className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 px-3 py-2 rounded text-xs font-bold flex items-center gap-2 shadow-sm transition-transform active:scale-95"
-                        title="Imprimir en B/N sin fotos para firmar"
-                      >
+                      <PDFDownloadLink document={<OrdenPDF orden={datosPDF} modo="impresion" />} fileName={`OrdenFisica_${rel.autos.patente}.pdf`} className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 px-3 py-2 rounded text-xs font-bold flex items-center gap-2 shadow-sm transition-transform active:scale-95" title="Imprimir en B/N sin fotos para firmar">
                         {({ loading }) => loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <><Printer className="w-4 h-4"/> Imprimir</>}
                       </PDFDownloadLink>
-
-                      <PDFDownloadLink 
-                        document={<OrdenPDF orden={datosPDF} modo="digital" />} 
-                        fileName={`Informe_${rel.autos.patente}.pdf`} 
-                        className="bg-slate-900 hover:bg-slate-800 text-white px-3 py-2 rounded text-sm font-bold flex items-center gap-2 shadow transition-transform active:scale-95"
-                      >
+                      <PDFDownloadLink document={<OrdenPDF orden={datosPDF} modo="digital" />} fileName={`Informe_${rel.autos.patente}.pdf`} className="bg-slate-900 hover:bg-slate-800 text-white px-3 py-2 rounded text-sm font-bold flex items-center gap-2 shadow transition-transform active:scale-95">
                         {({ loading }) => loading ? 'Generando...' : <><FileText className="w-4 h-4"/> PDF Digital</>}
                       </PDFDownloadLink>
                     </div>
                   </div>
-                  
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="text-xs font-bold text-slate-500 uppercase">Año</label><input type="number" className="w-full p-2 border rounded mt-1 bg-white font-bold text-center" value={carEdits[carId]?.anio} onChange={(e) => setCarEdits({...carEdits, [carId]: {...carEdits[carId], anio: e.target.value}})} /></div>
                     <div><label className="text-xs font-bold text-slate-500 uppercase">Color</label><input className="w-full p-2 border rounded mt-1 bg-white font-bold text-center uppercase" value={carEdits[carId]?.color} onChange={(e) => setCarEdits({...carEdits, [carId]: {...carEdits[carId], color: e.target.value}})} /></div>
                     <div className="col-span-2"><label className="text-xs font-bold text-slate-500 uppercase">Número VIN / Chasis</label><input className="w-full p-2 border rounded mt-1 uppercase font-mono bg-white font-bold text-center" value={carEdits[carId]?.vin} onChange={(e) => setCarEdits({...carEdits, [carId]: {...carEdits[carId], vin: e.target.value.toUpperCase()}})} /></div>
                   </div>
-                  <button onClick={() => updateCarDetails(carId)} className="mt-4 w-full flex items-center justify-center gap-2 py-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded font-bold text-sm">
-                    <Save className="w-4 h-4" /> Guardar Perfil del Vehículo
-                  </button>
+                  <button onClick={() => updateCarDetails(carId)} className="mt-4 w-full flex items-center justify-center gap-2 py-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded font-bold text-sm"><Save className="w-4 h-4" /> Guardar Perfil del Vehículo</button>
                 </div>
               )
             })}
           </div>
 
           <div className="pt-8 flex justify-center">
-            <button onClick={deleteOrder} className="text-red-400 hover:text-red-600 hover:bg-red-50 px-4 py-2 rounded transition-colors flex items-center gap-2 text-sm">
-              <Trash2 className="w-4 h-4" /> Eliminar esta orden permanentemente
-            </button>
+            <button onClick={deleteOrder} className="text-red-400 hover:text-red-600 hover:bg-red-50 px-4 py-2 rounded transition-colors flex items-center gap-2 text-sm"><Trash2 className="w-4 h-4" /> Eliminar esta orden permanentemente</button>
           </div>
         </div>
       )}
-
     </div>
   )
 }
