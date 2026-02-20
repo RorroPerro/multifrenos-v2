@@ -15,6 +15,8 @@ import PublicTrackingPage from './modules/public/PublicTrackingPage'
 import PlantillasPage from './modules/plantillas/PlantillasPage'
 import TareasPage from './modules/tareas/TareasPage'
 import KanbanPage from './modules/pizarra/KanbanPage'
+import PortalFlota from './modules/portal/PortalFlota'
+import PortalCliente from './modules/portal/PortalCliente'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -47,6 +49,8 @@ function App() {
       <Routes>
         {/* RUTA PÚBLICA PARA EL CLIENTE (va suelta, sin el Sidebar) */}
         <Route path="/seguimiento/:id" element={<PublicTrackingPage />} />
+        <Route path="/portal/:token" element={<PortalFlota />} />
+        <Route path="/mi-auto/:token" element={<PortalCliente />} />
 
         {/* Ruta de login pública */}
         <Route 

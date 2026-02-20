@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../supabase/client'
-import { Loader2, Car, Clock, Wrench, ShieldCheck, MapPin, Phone, Check } from 'lucide-react'
+import { Loader2, Car, Clock, Wrench, ShieldCheck, MapPin, Phone, Check, MessageCircle, ExternalLink } from 'lucide-react'
 
 // El logo de tu taller
 const LOGO_URL = "https://qyngfwrjnposqwqrfohi.supabase.co/storage/v1/object/public/fotos-taller/Multifrenos%20(1024%20x%201024%20px)%20(1024%20x%20500%20px)%20(2).png"
 
 export default function PublicTrackingPage() {
-  const { id } = useParams() // Obtenemos el ID de la URL
+  const { id } = useParams() 
+  const navigate = useNavigate()
   const [order, setOrder] = useState(null)
   const [details, setDetails] = useState([])
   const [loading, setLoading] = useState(true)
@@ -19,12 +20,11 @@ export default function PublicTrackingPage() {
 
   async function fetchOrderData() {
     try {
-      // 1. Traer la orden con sus autos y cliente
       const { data: orderData, error: orderError } = await supabase
         .from('ordenes')
         .select(`
           *,
-          clientes ( nombre ),
+          clientes ( nombre, token_flota, tipo ),
           orden_autos ( autos ( patente, marca, modelo ) )
         `)
         .eq('id', id)
@@ -33,7 +33,6 @@ export default function PublicTrackingPage() {
       if (orderError || !orderData) throw new Error('Orden no encontrada')
       setOrder(orderData)
 
-      // 2. Traer los servicios y repuestos presupuestados
       const { data: detailsData } = await supabase
         .from('orden_detalle')
         .select('*')
@@ -46,6 +45,20 @@ export default function PublicTrackingPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // --- BOTÓN INTELIGENTE WHATSAPP ---
+  const handleWhatsApp = () => {
+    const telefonoTaller = "56987763347" 
+    const patente = order.orden_autos[0]?.autos?.patente || 'Vehículo'
+    const mensaje = `Hola Multifrenos 🚗🔧! Estoy revisando el estado de mi orden #${order.id.slice(0,6).toUpperCase()} (Patente: *${patente}*). Tengo una consulta...`
+    window.open(`https://wa.me/${telefonoTaller}?text=${encodeURIComponent(mensaje)}`, '_blank')
+  }
+
+  const handleIrAlPortal = () => {
+    if (!order?.clientes?.token_flota) return
+    const ruta = order.clientes.tipo === 'Empresa' ? '/portal/' : '/mi-auto/'
+    navigate(`${ruta}${order.clientes.token_flota}`)
   }
 
   if (loading) return (
@@ -65,14 +78,21 @@ export default function PublicTrackingPage() {
     </div>
   )
 
-  // Lógica para la barra de progreso
-  const steps = ['Ingresado', 'En Proceso', 'Terminado', 'Entregado']
-  const currentStepIndex = steps.indexOf(order.estado)
+  // --- SINCRONIZACIÓN EXACTA CON KANBAN Y ÓRDENES ---
+  const stepConfig = [
+    { status: 'Agendado', title: 'Cita Agendada', activeBg: 'bg-indigo-600', ring: 'ring-indigo-100', text: 'text-indigo-600' },
+    { status: 'Recibido', title: 'Vehículo en Taller', activeBg: 'bg-blue-600', ring: 'ring-blue-100', text: 'text-blue-600' },
+    { status: 'En Proceso', title: 'En Reparación', activeBg: 'bg-amber-500', ring: 'ring-amber-100', text: 'text-amber-600' },
+    { status: 'Finalizado', title: 'Listo para Retiro', activeBg: 'bg-green-500', ring: 'ring-green-100', text: 'text-green-600' },
+    { status: 'Entregado', title: 'Vehículo Entregado', activeBg: 'bg-slate-600', ring: 'ring-slate-100', text: 'text-slate-600' }
+  ]
+  
+  const currentStepIndex = stepConfig.findIndex(s => s.status === order.estado)
 
   const formatMoney = (amount) => new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(amount)
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-10 font-sans selection:bg-blue-200">
+    <div className="min-h-screen bg-slate-50 pb-10 font-sans selection:bg-blue-200 relative">
       
       {/* HEADER TIPO APP MOVIL */}
       <header className="bg-slate-900 text-white pt-10 pb-8 px-6 rounded-b-[2.5rem] shadow-xl relative overflow-hidden">
@@ -92,27 +112,26 @@ export default function PublicTrackingPage() {
 
       <main className="max-w-md mx-auto px-4 -mt-6 relative z-20 space-y-5">
         
-        {/* 1. TARJETA DE ESTADO (STEPPER VERTICAL) */}
+        {/* 1. TARJETA DE ESTADO (STEPPER VERTICAL SINCRONIZADO) */}
         <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 p-6">
           <h2 className="font-black text-slate-800 mb-6 flex items-center gap-2 text-lg">
             <Clock className="w-5 h-5 text-blue-500"/> Progreso del Servicio
           </h2>
           
           <div className="relative pl-2">
-            {/* Línea gris conectora de fondo */}
             <div className="absolute left-[23px] top-2 bottom-4 w-0.5 bg-slate-100 z-0"></div>
             
             <div className="space-y-6 relative z-10">
-              {steps.map((step, index) => {
+              {stepConfig.map((step, index) => {
                 const isCompleted = index <= currentStepIndex
                 const isCurrent = index === currentStepIndex
                 
                 return (
-                  <div key={step} className="flex items-start gap-4">
+                  <div key={step.status} className="flex items-start gap-4">
                     {/* El Circulito */}
                     <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-sm transition-all duration-500 ${
-                      isCurrent ? 'bg-blue-600 text-white ring-4 ring-blue-50 scale-110' : 
-                      isCompleted ? 'bg-green-500 text-white ring-4 ring-green-50' : 
+                      isCurrent ? `${step.activeBg} text-white ring-4 ${step.ring} scale-110` : 
+                      isCompleted ? 'bg-slate-800 text-white ring-4 ring-slate-100' : 
                       'bg-slate-100 text-slate-400 ring-4 ring-white'
                     }`}>
                       {isCompleted && !isCurrent ? <Check className="w-4 h-4"/> : (index + 1)}
@@ -120,11 +139,11 @@ export default function PublicTrackingPage() {
                     
                     {/* El Texto */}
                     <div className="pt-1">
-                      <p className={`font-black tracking-tight ${
-                        isCurrent ? 'text-blue-600 text-lg' : 
+                      <p className={`font-black tracking-tight transition-colors ${
+                        isCurrent ? `${step.text} text-lg` : 
                         isCompleted ? 'text-slate-800' : 
                         'text-slate-400'
-                      }`}>{step}</p>
+                      }`}>{step.title}</p>
                       {isCurrent && <p className="text-xs text-slate-500 font-medium mt-0.5 animate-pulse">Etapa actual de tu orden</p>}
                     </div>
                   </div>
@@ -184,6 +203,19 @@ export default function PublicTrackingPage() {
           )}
         </div>
 
+        {/* NUEVO BOTÓN: IR AL GARAJE VIRTUAL (Si el cliente tiene Token) */}
+        {order.clientes?.token_flota && (
+          <div className="pt-2">
+            <button 
+              onClick={handleIrAlPortal}
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-4 rounded-2xl shadow-xl flex items-center justify-center gap-2 transition-transform active:scale-95"
+            >
+              Ir a mi Garaje Virtual <ExternalLink className="w-5 h-5"/>
+            </button>
+            <p className="text-center text-xs text-slate-500 mt-2 font-medium">Revisa el estado de salud a largo plazo de tus vehículos.</p>
+          </div>
+        )}
+
         {/* 4. INFO CONTACTO FOOTER */}
         <div className="text-center space-y-2 pt-6 pb-4">
           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Taller Multifrenos</p>
@@ -192,6 +224,22 @@ export default function PublicTrackingPage() {
         </div>
 
       </main>
+
+      {/* BOTÓN FLOTANTE WHATSAPP (S.O.S / CONTACTO) */}
+      <button 
+        onClick={handleWhatsApp} 
+        className="fixed bottom-6 right-6 sm:bottom-10 sm:right-10 bg-green-500 hover:bg-green-600 text-white p-4 rounded-full shadow-[0_0_20px_rgba(34,197,94,0.5)] flex items-center justify-center transition-transform hover:scale-110 z-40 group"
+      >
+        <MessageCircle className="w-7 h-7" />
+        <span className="absolute right-16 bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+          Contactar Taller
+        </span>
+        <span className="absolute top-0 right-0 flex h-3 w-3">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-green-200"></span>
+        </span>
+      </button>
+
     </div>
   )
 }

@@ -26,14 +26,14 @@ const getStyles = (modo) => {
     infoSub: { fontSize: 8, color: '#444' },
 
     // VITALES & RECEPCIÓN
-    gridVitales: { flexDirection: 'row', gap: 5, marginBottom: 15 },
-    boxVital: { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#ccc', borderRadius: 4, padding: 6, alignItems: 'center' },
-    vitalLabel: { fontSize: 7, fontWeight: 'bold', color: '#666', marginBottom: 3, textAlign: 'center' },
-    vitalText: { fontSize: 9, fontWeight: 'bold', color: '#000', textAlign: 'center' },
+    gridVitales: { flexDirection: 'row', gap: 10, marginBottom: 15 },
+    boxVital: { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#ccc', borderRadius: 4, padding: 8, alignItems: 'center' },
+    vitalLabel: { fontSize: 7, fontWeight: 'bold', color: '#666', marginBottom: 4, textAlign: 'center' },
+    vitalText: { fontSize: 11, fontWeight: 'bold', color: '#000', textAlign: 'center' },
     
-    combustibleBar: { height: 4, backgroundColor: '#eee', borderRadius: 2, marginTop: 4, width: '90%' },
-    combustibleFill: { height: '100%', backgroundColor: colorPrincipal, borderRadius: 2 },
-    obsRecepcion: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ccc', borderRadius: 4, padding: 6, marginBottom: 15 },
+    combustibleBar: { height: 6, backgroundColor: '#eee', borderRadius: 3, marginTop: 4, width: '90%' },
+    combustibleFill: { height: '100%', backgroundColor: colorPrincipal, borderRadius: 3 },
+    obsRecepcion: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#ccc', borderRadius: 4, padding: 8, marginBottom: 15 },
 
     // TABLAS (Servicios y Checklist)
     sectionTitle: { fontSize: 11, fontWeight: 'bold', color: colorPrincipal, marginBottom: 5, marginTop: 10, borderBottomWidth: 1, borderBottomColor: colorPrincipal, paddingBottom: 2 },
@@ -91,7 +91,6 @@ const OrdenPDF = ({ orden, modo = 'digital' }) => {
   const fecha = vehiculo.fecha || new Date().toLocaleDateString('es-CL');
   const money = (val) => '$ ' + (parseInt(val) || 0).toLocaleString('es-CL');
 
-  // Recopilar fotos (Solo se usan si el modo es digital)
   const fotosChecklist = [];
   if (inspeccion) {
     inspeccion.forEach(cat => {
@@ -116,7 +115,7 @@ const OrdenPDF = ({ orden, modo = 'digital' }) => {
   };
 
   const getStatusStyle = (st) => {
-    if (modo === 'impresion') return styles.stPrint; // En B/N todo es negro/gris oscuro
+    if (modo === 'impresion') return styles.stPrint; 
     if (st === 'ok') return styles.stOk;
     if (st === 'atencion') return styles.stObs;
     if (st === 'malo') return styles.stFail;
@@ -155,29 +154,17 @@ const OrdenPDF = ({ orden, modo = 'digital' }) => {
           </View>
         </View>
 
-        {/* VITALES Y RECEPCIÓN */}
+        {/* VITALES & RECEPCIÓN (Limpiado: Solo KM y Combustible) */}
         <View style={styles.gridVitales} wrap={false}>
           <View style={styles.boxVital}>
-            <Text style={styles.vitalLabel}>KILOMETRAJE</Text>
+            <Text style={styles.vitalLabel}>KILOMETRAJE DE INGRESO</Text>
             <Text style={styles.vitalText}>{vehiculo.km} KM</Text>
           </View>
           <View style={styles.boxVital}>
-            <Text style={styles.vitalLabel}>COMBUSTIBLE ({vehiculo.combustible}%)</Text>
+            <Text style={styles.vitalLabel}>NIVEL DE COMBUSTIBLE ({vehiculo.combustible}%)</Text>
             <View style={styles.combustibleBar}>
               <View style={[styles.combustibleFill, { width: `${vehiculo.combustible}%` }]} />
             </View>
-          </View>
-          <View style={styles.boxVital}>
-            <Text style={styles.vitalLabel}>BATERÍA (MES/AÑO)</Text>
-            <Text style={styles.vitalText}>{vehiculo.bateria}</Text>
-          </View>
-          <View style={styles.boxVital}>
-            <Text style={styles.vitalLabel}>NEUMÁTICOS (DEL)</Text>
-            <Text style={[styles.vitalText, {fontSize: 7}]}>{vehiculo.dot_del}</Text>
-          </View>
-          <View style={styles.boxVital}>
-            <Text style={styles.vitalLabel}>NEUMÁTICOS (TRAS)</Text>
-            <Text style={[styles.vitalText, {fontSize: 7}]}>{vehiculo.dot_tras}</Text>
           </View>
         </View>
 
@@ -188,7 +175,7 @@ const OrdenPDF = ({ orden, modo = 'digital' }) => {
           </View>
         )}
 
-        {/* --- CHECKLIST DE INSPECCIÓN (Si existe) --- */}
+        {/* --- CHECKLIST DE INSPECCIÓN --- */}
         {inspeccion && inspeccion.length > 0 && (
           <View>
             <Text style={styles.sectionTitle}>1. RESULTADOS DE INSPECCIÓN TÉCNICA</Text>

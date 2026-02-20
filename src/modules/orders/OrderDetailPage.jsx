@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../supabase/client'
 import { PDFDownloadLink } from '@react-pdf/renderer'
 import OrdenPDF from '../../components/OrdenPDF'
-import { Car, ArrowLeft, Fuel, Gauge, FileText, Plus, Trash2, Printer, Loader2, Clock, CheckCircle, Save, MessageCircle, Camera, Image as ImageIcon, X, ClipboardCheck, ChevronDown, ChevronUp, Receipt, Search, Box } from 'lucide-react'
+import { Car, ArrowLeft, Fuel, Gauge, FileText, Plus, Trash2, Printer, Loader2, Clock, CheckCircle, Save, MessageCircle, Camera, Image as ImageIcon, X, ClipboardCheck, ChevronDown, ChevronUp, Receipt, Search, Box, Settings2 } from 'lucide-react'
+import ProyeccionesFlota from '../../components/ProyeccionesFlota' 
 
 export default function OrderDetailPage() {
   const { id } = useParams()
@@ -26,10 +27,11 @@ export default function OrderDetailPage() {
   const [checklist, setChecklist] = useState({ kilometraje: 0, nivel_combustible: 50, observaciones_recepcion: '' })
   const [carEdits, setCarEdits] = useState({})
   const fileInputRef = useRef(null) 
+  const [carForProjections, setCarForProjections] = useState(null)
 
   // --- ESTADOS AGREGAR ÍTEMS PRINCIPALES ---
   const [inventory, setInventory] = useState([])
-  const [addItemType, setAddItemType] = useState('servicio') // Solo 'servicio' o 'manual'
+  const [addItemType, setAddItemType] = useState('servicio')
   const [searchServiceTerm, setSearchServiceTerm] = useState('')
   const [selectedService, setSelectedService] = useState(null)
   const [manualItem, setManualItem] = useState({ nombre: '', precio: '' })
@@ -38,6 +40,7 @@ export default function OrderDetailPage() {
   const [nestingInItemId, setNestingInItemId] = useState(null)
   const [searchNestTerm, setSearchNestTerm] = useState('')
   const [selectedNestInv, setSelectedNestInv] = useState(null)
+  
 
   useEffect(() => {
     fetchData()
@@ -47,7 +50,7 @@ export default function OrderDetailPage() {
     setLoading(true)
     const { data: orderData, error } = await supabase
       .from('ordenes')
-      .select(`*, clientes ( nombre, tipo, telefono, email, rut ), orden_autos ( id, kilometraje, nivel_combustible, observaciones_recepcion, autos ( id, patente, marca, modelo, anio, vin, color, bateria_mes, bateria_anio, dot_di, dot_dd, dot_ti, dot_td ) )`)
+      .select(`*, clientes ( nombre, tipo, telefono, email, rut, token_flota ), orden_autos ( id, kilometraje, nivel_combustible, observaciones_recepcion, autos ( id, patente, marca, modelo, anio, vin, color, bateria_mes, bateria_anio, dot_di, dot_dd, dot_ti, dot_td, fecha_revision_tecnica, prox_cambio_aceite, prox_cambio_frenos ) )`)
       .eq('id', id)
       .single()
 
@@ -72,9 +75,7 @@ export default function OrderDetailPage() {
     if (orderData.orden_autos) {
       orderData.orden_autos.forEach(rel => {
         initialEdits[rel.autos.id] = {
-          anio: rel.autos.anio || '', vin: rel.autos.vin || '', color: rel.autos.color || '',
-          bateria_mes: rel.autos.bateria_mes || '', bateria_anio: rel.autos.bateria_anio || '',
-          dot_di: rel.autos.dot_di || '', dot_dd: rel.autos.dot_dd || '', dot_ti: rel.autos.dot_ti || '', dot_td: rel.autos.dot_td || ''
+          anio: rel.autos.anio || '', vin: rel.autos.vin || '', color: rel.autos.color || ''
         }
       })
     }
@@ -124,7 +125,6 @@ export default function OrderDetailPage() {
     if(!confirm('¿Borrar este ítem de la orden? (Se devolverán los insumos anidados a bodega)')) return
     const itemToDelete = orderDetails.find(d => d.id === itemId)
 
-    // Devolver insumos anidados a bodega
     if (itemToDelete?.insumos_anidados?.length > 0) {
       for (const anidado of itemToDelete.insumos_anidados) {
         const invAnidado = inventory.find(i => i.id === anidado.inventario_id)
@@ -208,11 +208,9 @@ export default function OrderDetailPage() {
     updateOrderTotal(newDetails)
   }
 
-  // --- FILTROS BUSCADORES ---
   const filteredServices = searchServiceTerm.length > 1 && !selectedService ? catalogServices.filter(s => s.nombre.toLowerCase().includes(searchServiceTerm.toLowerCase())) : []
   const filteredNestInventory = searchNestTerm.length > 1 && !selectedNestInv ? inventory.filter(i => i.nombre.toLowerCase().includes(searchNestTerm.toLowerCase()) || (i.sku && i.sku.toLowerCase().includes(searchNestTerm.toLowerCase()))) : []
 
-  // --- RESTO (IVA, Totales) ---
   async function toggleIva() {
     const newValue = !order.incluye_iva
     const sumItems = orderDetails.reduce((sum, d) => sum + d.total_linea, 0)
@@ -295,7 +293,8 @@ export default function OrderDetailPage() {
 
   async function updateCarDetails(carId) {
     const { error } = await supabase.from('autos').update(carEdits[carId]).eq('id', carId)
-    if (!error) alert('✅ Datos del vehículo actualizados')
+    if (!error) alert('✅ Perfil del Vehículo actualizado')
+    else alert('Error: ' + error.message)
   }
 
   const handlePhotoUpload = async (e) => {
@@ -384,7 +383,6 @@ export default function OrderDetailPage() {
                 <span className="text-green-600 font-mono text-xl">{money(activeCarItems.reduce((s, i) => s + i.total_linea, 0) * (order.incluye_iva ? 1.19 : 1))}</span>
               </h3>
               
-              {/* BUSCADOR PRINCIPAL */}
               <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 mb-4">
                 <div className="flex gap-1 mb-3 bg-slate-200/50 p-1 rounded-lg">
                   <button onClick={() => setAddItemType('servicio')} className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-colors ${addItemType === 'servicio' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>Servicio Libre</button>
@@ -420,14 +418,12 @@ export default function OrderDetailPage() {
                 {activeCarItems.length === 0 && <p className="text-slate-400 text-center italic mt-4 text-sm">Sin cargos registrados</p>}
                 
                 {activeCarItems.map((item) => (
-                  // CORRECCIÓN: Quitamos overflow-hidden y dejamos relative
                   <div key={item.id} className="bg-white rounded-lg border border-slate-200 shadow-sm relative">
                     <div className="flex justify-between items-start p-3 bg-slate-50 rounded-t-lg">
                       <div className="flex-1">
                         <span className="font-bold text-sm text-slate-800 block leading-tight">{item.servicio_nombre}</span>
                         <div className="flex gap-2 mt-1">
                           {item.tipo_item === 'manual' && <span className="text-[9px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Manual</span>}
-                          
                           <button onClick={() => setNestingInItemId(nestingInItemId === item.id ? null : item.id)} className="text-[10px] text-blue-600 font-bold uppercase flex items-center gap-1 hover:text-blue-800 transition-colors">
                             <Box className="w-3 h-3"/> + Añadir Insumo
                           </button>
@@ -454,7 +450,6 @@ export default function OrderDetailPage() {
                           <button onClick={() => addNestedInsumo(item.id)} disabled={!selectedNestInv} className="bg-blue-600 text-white px-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-bold text-sm">Vincular</button>
                         </div>
                         
-                        {/* Resultados Flotantes del Insumo Anidado (Ahora sí se ven) */}
                         {filteredNestInventory.length > 0 && (
                           <div className="absolute top-full left-3 right-3 mt-1 bg-white border border-slate-200 shadow-2xl rounded-lg max-h-40 overflow-y-auto z-50">
                             {filteredNestInventory.map(i => (
@@ -464,7 +459,6 @@ export default function OrderDetailPage() {
                                   <p className="text-[10px] text-slate-500">{i.sku || 'Sin código'}</p>
                                 </div>
                                 <div className="text-right">
-                                  {/* CORRECCIÓN: Validamos NaN al renderizar */}
                                   <span className="font-mono text-[10px] font-bold text-blue-700 block">{money(Number(i.precio_venta) || 0)}</span>
                                   <span className={`text-[9px] font-bold ${(Number(i.stock_actual) || 0) > 0 ? 'text-green-600' : 'text-red-500'}`}>Stock: {Number(i.stock_actual) || 0}</span>
                                 </div>
@@ -501,35 +495,8 @@ export default function OrderDetailPage() {
             </div>
             
             <div className="p-6">
-              <div className="mb-8 border-b border-slate-100 pb-6">
-                <h4 className="font-black text-slate-400 text-xs tracking-widest mb-4">1. SIGNOS VITALES DEL VEHÍCULO</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <label className="text-xs font-bold text-slate-600 block mb-2">BATERÍA (MES / AÑO)</label>
-                    <div className="flex gap-2">
-                      <input type="number" placeholder="Mes" className="w-1/2 p-2 text-center rounded border outline-none font-bold" value={carEdits[activeTab]?.bateria_mes} onChange={e => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], bateria_mes: e.target.value}})} />
-                      <input type="number" placeholder="Año" className="w-1/2 p-2 text-center rounded border outline-none font-bold" value={carEdits[activeTab]?.bateria_anio} onChange={e => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], bateria_anio: e.target.value}})} />
-                    </div>
-                  </div>
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <label className="text-xs font-bold text-slate-600 block mb-2 text-center">NEUMÁTICOS DELANTEROS (DOT)</label>
-                    <div className="flex gap-2">
-                      <div className="w-1/2"><span className="text-[10px] text-slate-400 block text-center">Izq</span><input maxLength="4" placeholder="Ej: 4223" className="w-full p-2 text-center rounded border font-mono tracking-widest outline-none" value={carEdits[activeTab]?.dot_di} onChange={e => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], dot_di: e.target.value}})} /></div>
-                      <div className="w-1/2"><span className="text-[10px] text-slate-400 block text-center">Der</span><input maxLength="4" placeholder="Ej: 4223" className="w-full p-2 text-center rounded border font-mono tracking-widest outline-none" value={carEdits[activeTab]?.dot_dd} onChange={e => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], dot_dd: e.target.value}})} /></div>
-                    </div>
-                  </div>
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <label className="text-xs font-bold text-slate-600 block mb-2 text-center">NEUMÁTICOS TRASEROS (DOT)</label>
-                    <div className="flex gap-2">
-                      <div className="w-1/2"><span className="text-[10px] text-slate-400 block text-center">Izq</span><input maxLength="4" placeholder="Ej: 1521" className="w-full p-2 text-center rounded border font-mono tracking-widest outline-none" value={carEdits[activeTab]?.dot_ti} onChange={e => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], dot_ti: e.target.value}})} /></div>
-                      <div className="w-1/2"><span className="text-[10px] text-slate-400 block text-center">Der</span><input maxLength="4" placeholder="Ej: 1521" className="w-full p-2 text-center rounded border font-mono tracking-widest outline-none" value={carEdits[activeTab]?.dot_td} onChange={e => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], dot_td: e.target.value}})} /></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               <h4 className="font-black text-slate-400 text-xs tracking-widest mb-4 flex justify-between items-center">
-                <span>2. REVISIÓN POR PUNTOS</span>
+                <span>REVISIÓN POR PUNTOS</span>
                 {activeInspeccionData && <button onClick={borrarInspeccion} className="text-red-500 hover:underline">Borrar y Cambiar Plantilla</button>}
               </h4>
 
@@ -658,7 +625,6 @@ export default function OrderDetailPage() {
               const fotosDelAuto = orderPhotos.filter(p => p.auto_id === carId);
               const informeDelAuto = inspecciones.find(i => i.auto_id === carId);
 
-              // --- PREPARACIÓN DE DATOS PARA EL PDF (Ocultando Repuestos) ---
               const reparacionesProcesadas = repuestosDelAuto.map(rep => {
                 let textoFinal = rep.servicio_nombre;
                 if (rep.insumos_anidados && rep.insumos_anidados.length > 0) {
@@ -674,10 +640,7 @@ export default function OrderDetailPage() {
                   telefono: order.clientes?.telefono, patente: rel.autos.patente, marca: rel.autos.marca, modelo: rel.autos.modelo,
                   anio: carEdits[carId]?.anio || rel.autos.anio || '', vin: carEdits[carId]?.vin || rel.autos.vin || '',
                   km: rel.kilometraje || '0', combustible: rel.nivel_combustible || '50', observaciones: rel.observaciones_recepcion || '', 
-                  fecha: new Date(order.created_at).toLocaleDateString('es-CL'), tecnico: 'Taller Multifrenos',
-                  bateria: (carEdits[carId]?.bateria_mes && carEdits[carId]?.bateria_anio) ? `${carEdits[carId]?.bateria_mes} / ${carEdits[carId]?.bateria_anio}` : 'Sin Reg.',
-                  dot_del: `Izq: ${carEdits[carId]?.dot_di || '-'} | Der: ${carEdits[carId]?.dot_dd || '-'}`,
-                  dot_tras: `Izq: ${carEdits[carId]?.dot_ti || '-'} | Der: ${carEdits[carId]?.dot_td || '-'}`
+                  fecha: new Date(order.created_at).toLocaleDateString('es-CL'), tecnico: 'Taller Multifrenos'
                 },
                 reparaciones: reparacionesProcesadas,
                 fotos: fotosDelAuto, inspeccion: informeDelAuto ? informeDelAuto.resultados : null,
@@ -697,12 +660,26 @@ export default function OrderDetailPage() {
                       </PDFDownloadLink>
                     </div>
                   </div>
+                  
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="text-xs font-bold text-slate-500 uppercase">Año</label><input type="number" className="w-full p-2 border rounded mt-1 bg-white font-bold text-center" value={carEdits[carId]?.anio} onChange={(e) => setCarEdits({...carEdits, [carId]: {...carEdits[carId], anio: e.target.value}})} /></div>
                     <div><label className="text-xs font-bold text-slate-500 uppercase">Color</label><input className="w-full p-2 border rounded mt-1 bg-white font-bold text-center uppercase" value={carEdits[carId]?.color} onChange={(e) => setCarEdits({...carEdits, [carId]: {...carEdits[carId], color: e.target.value}})} /></div>
-                    <div className="col-span-2"><label className="text-xs font-bold text-slate-500 uppercase">Número VIN / Chasis</label><input className="w-full p-2 border rounded mt-1 uppercase font-mono bg-white font-bold text-center" value={carEdits[carId]?.vin} onChange={(e) => setCarEdits({...carEdits, [carId]: {...carEdits[carId], vin: e.target.value.toUpperCase()}})} /></div>
+                    <div className="col-span-2"><label className="text-xs font-bold text-slate-500 uppercase">Número VIN / Chasis</label><input className="w-full p-2 border rounded mt-1 uppercase font-mono bg-white font-bold text-center tracking-widest" value={carEdits[carId]?.vin} onChange={(e) => setCarEdits({...carEdits, [carId]: {...carEdits[carId], vin: e.target.value.toUpperCase()}})} /></div>
                   </div>
-                  <button onClick={() => updateCarDetails(carId)} className="mt-4 w-full flex items-center justify-center gap-2 py-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded font-bold text-sm"><Save className="w-4 h-4" /> Guardar Perfil del Vehículo</button>
+
+                  {/* BOTÓN PARA ABRIR EL COMPONENTE DE PROYECCIONES */}
+                  <div className="col-span-2 mt-4 pt-4 border-t border-slate-200">
+                    <button 
+                      onClick={() => setCarForProjections({ id: carId, patente: rel.autos.patente, km: rel.kilometraje, rt: rel.autos.fecha_revision_tecnica })}
+                      className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 rounded-xl font-bold text-sm shadow-sm transition-transform active:scale-95"
+                    >
+                      <Settings2 className="w-5 h-5" /> Configurar Semáforos y Salud del Vehículo
+                    </button>
+                  </div>
+
+                  <button onClick={() => updateCarDetails(carId)} className="mt-5 w-full flex items-center justify-center gap-2 py-3 bg-slate-900 text-white hover:bg-slate-800 rounded-xl font-bold text-sm shadow-md transition-transform active:scale-95">
+                    <Save className="w-4 h-4" /> Guardar Perfil Básico
+                  </button>
                 </div>
               )
             })}
@@ -713,6 +690,18 @@ export default function OrderDetailPage() {
           </div>
         </div>
       )}
+      
+      {/* RENDEREADO DEL COMPONENTE POP-UP DE SALUD */}
+      {carForProjections && (
+        <ProyeccionesFlota
+          carId={carForProjections.id}
+          patente={carForProjections.patente}
+          currentKm={carForProjections.km}
+          currentRT={carForProjections.rt}
+          onClose={() => setCarForProjections(null)}
+        />
+      )}
+
     </div>
   )
 }
