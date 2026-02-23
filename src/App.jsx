@@ -17,6 +17,9 @@ import TareasPage from './modules/tareas/TareasPage'
 import KanbanPage from './modules/pizarra/KanbanPage'
 import PortalFlota from './modules/portal/PortalFlota'
 import PortalCliente from './modules/portal/PortalCliente'
+import AjustesPage from './modules/settings/AjustesPage'
+import GastosPage from './modules/gastos/GastosPage'
+import HerramientasPage from './modules/herramientas/HerramientasPage'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -71,6 +74,9 @@ function App() {
             <Route path="/plantillas" element={<PlantillasPage />} />
             <Route path="/tareas" element={<TareasPage />} />
             <Route path="/pizarra" element={<KanbanPage />} />
+            <Route path="/ajustes" element={<AjustesPage />} />
+            <Route path="/herramientas" element={<HerramientasPage />} />
+            <Route path="/gastos" element={<GastosPage />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
         )}

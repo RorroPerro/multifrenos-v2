@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../supabase/client'
-import { Car, Clock, Wrench, CheckCircle, ArrowRight, Loader2, MapPin, CalendarClock, CalendarPlus, X, Save } from 'lucide-react'
+import { Car, Clock, Wrench, CheckCircle, ArrowRight, Loader2, MapPin, CalendarClock, CalendarPlus, X, Save, Play, Pause } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 const COLUMNS = [
@@ -17,6 +17,9 @@ export default function KanbanPage() {
 
   const [draggedOrder, setDraggedOrder] = useState(null)
 
+  // --- ESTADO PARA RELOJ EN VIVO ---
+  const [now, setNow] = useState(new Date())
+
   // --- ESTADOS PARA AGENDAR CITA ---
   const [showAgendaModal, setShowAgendaModal] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -26,6 +29,9 @@ export default function KanbanPage() {
 
   useEffect(() => {
     fetchActiveOrders()
+    // Timer para refrescar la interfaz cada minuto y ver avanzar los relojes
+    const interval = setInterval(() => setNow(new Date()), 60000)
+    return () => clearInterval(interval)
   }, [])
 
   async function fetchActiveOrders() {
@@ -33,7 +39,8 @@ export default function KanbanPage() {
     const { data, error } = await supabase
       .from('ordenes')
       .select(`
-        id, estado, total, fecha_agendada, ubicacion_taller,
+        id, estado, total, fecha_agendada, ubicacion_taller, 
+        tiempo_invertido_minutos, trabajando_desde,
         clientes (nombre, telefono),
         orden_autos (observaciones_recepcion, autos (id, patente, marca, modelo))
       `)
@@ -66,8 +73,18 @@ export default function KanbanPage() {
     e.preventDefault()
     if (!draggedOrder || draggedOrder.estado === newStatus) return
 
-    setOrders(orders.map(o => o.id === draggedOrder.id ? { ...o, estado: newStatus } : o))
-    const { error } = await supabase.from('ordenes').update({ estado: newStatus }).eq('id', draggedOrder.id)
+    let updateData = { estado: newStatus }
+
+    // PAUSA AUTOMÁTICA: Si lo sacan de "En Proceso" y estaba andando, lo pausamos y sumamos el tiempo
+    if (draggedOrder.estado === 'En Proceso' && newStatus !== 'En Proceso' && draggedOrder.trabajando_desde) {
+      const tiempoExtraMins = Math.floor((new Date() - new Date(draggedOrder.trabajando_desde)) / 60000)
+      updateData.tiempo_invertido_minutos = (draggedOrder.tiempo_invertido_minutos || 0) + tiempoExtraMins
+      updateData.trabajando_desde = null
+    }
+
+    setOrders(orders.map(o => o.id === draggedOrder.id ? { ...o, ...updateData } : o))
+    
+    const { error } = await supabase.from('ordenes').update(updateData).eq('id', draggedOrder.id)
     if (error) {
       alert('Error al mover la tarjeta')
       fetchActiveOrders()
@@ -87,13 +104,51 @@ export default function KanbanPage() {
     await supabase.from('ordenes').update({ ubicacion_taller: newUbicacion }).eq('id', orderId)
   }
 
+  // --- NUEVO: LÓGICA DE PLAY / PAUSA ---
+  const toggleWorkTimer = async (e, order) => {
+    e.stopPropagation()
+    
+    const isWorkingNow = !!order.trabajando_desde
+    let updateData = {}
+    
+    if (isWorkingNow) {
+      // PAUSAR: Calculamos los minutos desde que le dio play y los sumamos al total
+      const tiempoExtraMins = Math.floor((new Date() - new Date(order.trabajando_desde)) / 60000)
+      updateData = {
+        trabajando_desde: null,
+        tiempo_invertido_minutos: (order.tiempo_invertido_minutos || 0) + tiempoExtraMins
+      }
+    } else {
+      // INICIAR: Guardamos la hora actual
+      updateData = {
+        trabajando_desde: new Date().toISOString()
+      }
+    }
+
+    setOrders(orders.map(o => o.id === order.id ? { ...o, ...updateData } : o))
+    await supabase.from('ordenes').update(updateData).eq('id', order.id)
+  }
+
+  const formatTiempo = (minutosAcumulados, fechaInicio) => {
+    let totalMins = minutosAcumulados || 0
+    if (fechaInicio) {
+      totalMins += Math.floor((now - new Date(fechaInicio)) / 60000)
+    }
+    
+    const hrs = Math.floor(totalMins / 60)
+    const mins = totalMins % 60
+    
+    if (hrs === 0) return `${mins}m`
+    return `${hrs}h ${mins}m`
+  }
+
+
   // --- LÓGICA DE AGENDAR CITA RÁPIDA ---
   const handleAgendar = async (e) => {
     e.preventDefault()
     setIsSubmitting(true)
 
     try {
-      // 1. Gestionar Cliente (Buscar por teléfono o crear uno nuevo)
       let clienteId = null
       if (agendaForm.telefono) {
         const { data: exCliente } = await supabase.from('clientes').select('id').eq('telefono', agendaForm.telefono).single()
@@ -106,7 +161,6 @@ export default function KanbanPage() {
         clienteId = newC.id
       }
 
-      // 2. Gestionar Auto (Si no hay patente, creamos una temporal "S/P-XXXX")
       const patenteAUsar = agendaForm.patente ? agendaForm.patente.toUpperCase() : `S/P-${Math.floor(1000 + Math.random() * 9000)}`
       
       let autoId = null
@@ -119,16 +173,13 @@ export default function KanbanPage() {
         autoId = newA.id
       }
 
-      // 3. Crear la Orden Agendada
       const fechaFull = `${agendaForm.fecha}T${agendaForm.hora}:00`
       const { data: newOrder, error: errO } = await supabase.from('ordenes').insert([{ cliente_id: clienteId, estado: 'Agendado', fecha_agendada: fechaFull }]).select().single()
       if (errO) throw new Error('Error al crear orden')
 
-      // 4. Vincular el Auto a la Orden y guardar el motivo de visita
       const { error: errRel } = await supabase.from('orden_autos').insert([{ orden_id: newOrder.id, auto_id: autoId, observaciones_recepcion: agendaForm.motivo }])
       if (errRel) throw new Error('Error al vincular vehículo')
 
-      // Éxito
       setShowAgendaModal(false)
       setAgendaForm({ nombre: '', telefono: '', marca: '', modelo: '', patente: '', fecha: '', hora: '10:00', motivo: '' })
       fetchActiveOrders()
@@ -144,7 +195,6 @@ export default function KanbanPage() {
   const getTimeStatus = (dateString) => {
     if (!dateString) return null
     const targetDate = new Date(dateString)
-    const now = new Date()
     const diffMs = targetDate - now
     const diffHrs = Math.floor(diffMs / (1000 * 60 * 60))
     const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
@@ -200,6 +250,9 @@ export default function KanbanPage() {
                   const auto = order.orden_autos?.[0]?.autos || {}
                   const motivo = order.orden_autos?.[0]?.observaciones_recepcion || ''
                   const timer = order.estado === 'Agendado' ? getTimeStatus(order.fecha_agendada) : null
+                  
+                  const isWorkingNow = !!order.trabajando_desde
+                  const tiempoMostrar = formatTiempo(order.tiempo_invertido_minutos, order.trabajando_desde)
 
                   return (
                     <div 
@@ -236,29 +289,57 @@ export default function KanbanPage() {
                           )}
 
                           {column.id === 'En Proceso' && (
-                            <div className="flex items-center gap-1 text-xs" onClick={e => e.stopPropagation()}>
-                              <MapPin className="w-3 h-3 text-slate-400"/>
-                              <select 
-                                className="bg-slate-50 border border-slate-200 rounded p-1 text-[10px] font-bold text-slate-600 outline-none w-full cursor-pointer hover:bg-slate-100"
-                                value={order.ubicacion_taller || 'Sin Asignar'}
-                                onChange={(e) => handleUbicacion(e, order.id, e.target.value)}
-                              >
-                                <option value="Sin Asignar">Espacio sin asignar...</option>
-                                <option value="Elevador 1 (Principal)">Elevador 1 (Principal)</option>
-                                <option value="Elevador 2">Elevador 2</option>
-                                <option value="Foso">Foso</option>
-                                <option value="Patio">Patio Exterior</option>
-                              </select>
+                            <div className="space-y-2">
+                              {/* 1. Selector de Ubicación */}
+                              <div className="flex items-center gap-1 text-xs" onClick={e => e.stopPropagation()}>
+                                <MapPin className="w-3 h-3 text-slate-400"/>
+                                <select 
+                                  className="bg-slate-50 border border-slate-200 rounded p-1 text-[10px] font-bold text-slate-600 outline-none w-full cursor-pointer hover:bg-slate-100"
+                                  value={order.ubicacion_taller || 'Sin Asignar'}
+                                  onChange={(e) => handleUbicacion(e, order.id, e.target.value)}
+                                >
+                                  <option value="Sin Asignar">Espacio sin asignar...</option>
+                                  <option value="Elevador 1 (Principal)">Elevador 1 (Principal)</option>
+                                  <option value="Elevador 2">Elevador 2</option>
+                                  <option value="Foso">Foso</option>
+                                  <option value="Patio">Patio Exterior</option>
+                                </select>
+                              </div>
+                              
+                              {/* 2. NUEVO: Control de Tiempo (Play/Pausa) */}
+                              <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-1.5 rounded-lg" onClick={e => e.stopPropagation()}>
+                                <span className={`text-[11px] font-bold font-mono pl-1 ${isWorkingNow ? 'text-green-600' : 'text-slate-500'}`}>
+                                  ⏱️ {tiempoMostrar}
+                                </span>
+                                <button 
+                                  onClick={(e) => toggleWorkTimer(e, order)}
+                                  className={`px-3 py-1 rounded shadow-sm text-[10px] font-bold uppercase flex items-center gap-1 transition-colors ${
+                                    isWorkingNow 
+                                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-700 border border-amber-200' 
+                                      : 'bg-green-500 hover:bg-green-600 text-white'
+                                  }`}
+                                >
+                                  {isWorkingNow ? <><Pause className="w-3 h-3"/> Pausar</> : <><Play className="w-3 h-3"/> Iniciar</>}
+                                </button>
+                              </div>
                             </div>
                           )}
 
                           {column.id === 'Finalizado' && (
-                            <button 
-                              onClick={(e) => handleEntregar(e, order.id)}
-                              className="w-full mt-2 bg-green-500 hover:bg-green-600 text-white font-bold py-2 rounded-lg text-xs flex items-center justify-center gap-1 transition-colors"
-                            >
-                              <ArrowRight className="w-4 h-4"/> Entregar Vehículo
-                            </button>
+                            <div className="space-y-2">
+                              {/* Mostramos el tiempo total al final */}
+                              {order.tiempo_invertido_minutos > 0 && (
+                                <p className="text-[10px] text-slate-500 font-bold bg-slate-50 p-1 rounded inline-block">
+                                  ⏱️ Tiempo total: {formatTiempo(order.tiempo_invertido_minutos, null)}
+                                </p>
+                              )}
+                              <button 
+                                onClick={(e) => handleEntregar(e, order.id)}
+                                className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 rounded-lg text-xs flex items-center justify-center gap-1 transition-colors"
+                              >
+                                <ArrowRight className="w-4 h-4"/> Entregar Vehículo
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
