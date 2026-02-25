@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../supabase/client'
 import { PDFDownloadLink } from '@react-pdf/renderer'
 import OrdenPDF from '../../components/OrdenPDF'
-import { Car, ArrowLeft, Fuel, Gauge, FileText, Plus, Trash2, Printer, Loader2, Clock, CheckCircle, Save, MessageCircle, Camera, Image as ImageIcon, X, ClipboardCheck, ChevronDown, ChevronUp, Receipt, Search, Box, Settings2, Wrench } from 'lucide-react'
+import { Car, ArrowLeft, Fuel, Gauge, FileText, Plus, Trash2, Printer, Loader2, Clock, CheckCircle, Save, MessageCircle, Camera, Image as ImageIcon, X, ClipboardCheck, ChevronDown, ChevronUp, Receipt, Search, Box, Settings2, Wrench, AlertCircle } from 'lucide-react'
 import ProyeccionesFlota from '../../components/ProyeccionesFlota' 
 
 export default function OrderDetailPage() {
@@ -40,7 +40,7 @@ export default function OrderDetailPage() {
   const [nestingInItemId, setNestingInItemId] = useState(null)
   const [searchNestTerm, setSearchNestTerm] = useState('')
   const [selectedNestInv, setSelectedNestInv] = useState(null)
-  const [nestingMode, setNestingMode] = useState('inventario') // 'inventario' o 'manual'
+  const [nestingMode, setNestingMode] = useState('inventario')
   const [manualNestName, setManualNestName] = useState('')
   const [manualNestPrice, setManualNestPrice] = useState('')
 
@@ -99,7 +99,6 @@ export default function OrderDetailPage() {
     setActiveInspeccionData(inspeccionDelAuto || null)
   }
 
-  // --- LÓGICA DE ITEMS PRINCIPALES ---
   async function addItem() {
     let newItem = { orden_id: order.id, auto_id: activeTab, cantidad: 1, insumos_anidados: [] }
 
@@ -107,16 +106,7 @@ export default function OrderDetailPage() {
       if (!selectedService) return alert('Busca y selecciona un servicio de la lista primero.')
       const mo = Number(selectedService.precio_mano_obra) || 0; 
       const rep = Number(selectedService.precio_repuestos) || 0;
-      
-      // Se quitaron mano_obra_base y repuestos_base para evitar errores en la DB
-      newItem = { 
-        ...newItem, 
-        tipo_item: 'servicio', 
-        servicio_nombre: selectedService.nombre, 
-        precio_unitario: mo + rep, 
-        total_linea: mo + rep
-      }
-    
+      newItem = { ...newItem, tipo_item: 'servicio', servicio_nombre: selectedService.nombre, precio_unitario: mo + rep, total_linea: mo + rep }
     } else if (addItemType === 'manual') {
       if (!manualItem.nombre || !manualItem.precio) return alert('Completa nombre y precio')
       const precioManual = Number(manualItem.precio) || 0;
@@ -131,7 +121,6 @@ export default function OrderDetailPage() {
       setOrderDetails(newDetails)
       updateOrderTotal(newDetails)
     }
-    
     setSearchServiceTerm(''); setSelectedService(null); setManualItem({nombre: '', precio: ''})
   }
 
@@ -151,53 +140,33 @@ export default function OrderDetailPage() {
         }
       }
     }
-
     await supabase.from('orden_detalle').delete().eq('id', itemId)
     const newDetails = orderDetails.filter(d => d.id !== itemId)
     setOrderDetails(newDetails)
     updateOrderTotal(newDetails)
   }
 
-  // --- LÓGICA DE INSUMOS ANIDADOS ---
   async function addNestedInsumo(parentDetailId) {
     const parentDetail = orderDetails.find(d => d.id === parentDetailId)
     const currentAnidados = parentDetail.insumos_anidados || []
-    
     let newInsumo = {};
 
     if (nestingMode === 'inventario') {
-      if (!selectedNestInv) return alert('Busca y selecciona un repuesto del inventario primero')
+      if (!selectedNestInv) return alert('Busca y selecciona un repuesto primero')
       const precioInsumo = Number(selectedNestInv.precio_venta) || 0
-      newInsumo = {
-        id: Date.now().toString(),
-        inventario_id: selectedNestInv.id,
-        nombre: selectedNestInv.nombre,
-        categoria: selectedNestInv.categoria || 'Repuesto',
-        precio: precioInsumo
-      }
+      newInsumo = { id: Date.now().toString(), inventario_id: selectedNestInv.id, nombre: selectedNestInv.nombre, categoria: selectedNestInv.categoria || 'Repuesto', precio: precioInsumo }
     } else {
-      if (!manualNestName || !manualNestPrice) return alert('Llena el nombre y precio del insumo manual')
+      if (!manualNestName || !manualNestPrice) return alert('Llena el nombre y precio del insumo')
       const precioManual = Number(manualNestPrice) || 0;
-      newInsumo = {
-        id: Date.now().toString(),
-        inventario_id: 'manual',
-        nombre: manualNestName,
-        categoria: 'Repuesto Libre',
-        precio: precioManual
-      }
+      newInsumo = { id: Date.now().toString(), inventario_id: 'manual', nombre: manualNestName, categoria: 'Repuesto Libre', precio: precioManual }
     }
 
     const newAnidados = [...currentAnidados, newInsumo]
     const newTotalLinea = (Number(parentDetail.total_linea) || 0) + newInsumo.precio
 
-    const { error } = await supabase.from('orden_detalle').update({ 
-      insumos_anidados: newAnidados, 
-      total_linea: newTotalLinea 
-    }).eq('id', parentDetailId)
-
+    const { error } = await supabase.from('orden_detalle').update({ insumos_anidados: newAnidados, total_linea: newTotalLinea }).eq('id', parentDetailId)
     if (error) return alert('Error al guardar el insumo: ' + error.message)
 
-    // Restar stock solo si es de inventario
     if (nestingMode === 'inventario') {
       const newStock = (Number(selectedNestInv.stock_actual) || 0) - 1
       await supabase.from('inventario').update({ stock_actual: newStock }).eq('id', selectedNestInv.id)
@@ -207,31 +176,19 @@ export default function OrderDetailPage() {
     const newDetails = orderDetails.map(d => d.id === parentDetailId ? { ...d, insumos_anidados: newAnidados, total_linea: newTotalLinea } : d)
     setOrderDetails(newDetails)
     updateOrderTotal(newDetails)
-    
-    // Limpiar campos
-    setSearchNestTerm('')
-    setSelectedNestInv(null)
-    setManualNestName('')
-    setManualNestPrice('')
-    setNestingInItemId(null)
+    setSearchNestTerm(''); setSelectedNestInv(null); setManualNestName(''); setManualNestPrice(''); setNestingInItemId(null)
   }
 
   async function removeNestedInsumo(parentDetailId, insumoIdToRemove) {
     if (!confirm('¿Quitar este repuesto?')) return
-    
     const parentDetail = orderDetails.find(d => d.id === parentDetailId)
     const insumoToRemove = parentDetail.insumos_anidados.find(i => i.id === insumoIdToRemove)
     const newAnidados = parentDetail.insumos_anidados.filter(i => i.id !== insumoIdToRemove)
     const newTotalLinea = (Number(parentDetail.total_linea) || 0) - (Number(insumoToRemove.precio) || 0)
 
-    const { error } = await supabase.from('orden_detalle').update({ 
-      insumos_anidados: newAnidados, 
-      total_linea: newTotalLinea 
-    }).eq('id', parentDetailId)
-
+    const { error } = await supabase.from('orden_detalle').update({ insumos_anidados: newAnidados, total_linea: newTotalLinea }).eq('id', parentDetailId)
     if (error) return alert('Error al quitar insumo: ' + error.message)
 
-    // Devolver stock solo si vino del inventario
     if (insumoToRemove.inventario_id !== 'manual') {
       const invItem = inventory.find(i => i.id === insumoToRemove.inventario_id)
       if (invItem) {
@@ -246,13 +203,8 @@ export default function OrderDetailPage() {
     updateOrderTotal(newDetails)
   }
 
-  const filteredServices = catalogServices.filter(s => 
-    searchServiceTerm === '' ? true : s.nombre.toLowerCase().includes(searchServiceTerm.toLowerCase())
-  ).slice(0, 10) 
-
-  const filteredNestInventory = inventory.filter(i => 
-    searchNestTerm === '' ? true : (i.nombre.toLowerCase().includes(searchNestTerm.toLowerCase()) || (i.sku && i.sku.toLowerCase().includes(searchNestTerm.toLowerCase())))
-  ).slice(0, 10) 
+  const filteredServices = catalogServices.filter(s => searchServiceTerm === '' ? true : s.nombre.toLowerCase().includes(searchServiceTerm.toLowerCase())).slice(0, 10) 
+  const filteredNestInventory = inventory.filter(i => searchNestTerm === '' ? true : (i.nombre.toLowerCase().includes(searchNestTerm.toLowerCase()) || (i.sku && i.sku.toLowerCase().includes(searchNestTerm.toLowerCase())))).slice(0, 10) 
 
   async function toggleIva() {
     const newValue = !order.incluye_iva
@@ -286,8 +238,7 @@ export default function OrderDetailPage() {
 
   const resizeImage = (file) => {
     return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
+      const reader = new FileReader(); reader.readAsDataURL(file);
       reader.onload = (e) => {
         const img = new Image(); img.src = e.target.result;
         img.onload = () => {
@@ -330,10 +281,7 @@ export default function OrderDetailPage() {
   async function saveAllCarData() {
     const rel = order.orden_autos.find(r => r.autos.id === activeTab)
     const edits = carEdits[activeTab] || {}
-    
     const { error: e1 } = await supabase.from('orden_autos').update(checklist).eq('id', rel.id)
-    
-    // Convertimos datos vacíos a NULL para que no choquen con la Base de Datos
     const updateData = {
       kilometraje_actual: checklist.kilometraje,
       anio: edits.anio ? Number(edits.anio) : null,
@@ -341,11 +289,9 @@ export default function OrderDetailPage() {
       vin: edits.vin || null,
       numero_motor: edits.numero_motor || null
     }
-
     const { error: e2 } = await supabase.from('autos').update(updateData).eq('id', activeTab)
-    
-    if (!e1 && !e2) alert('✅ Datos del vehículo y recepción guardados')
-    else alert('Error al guardar datos: Verifica que el año sea un número válido.')
+    if (!e1 && !e2) alert('✅ Datos guardados con éxito')
+    else alert('Error al guardar datos. Verifica el año.')
   }
 
   const handlePhotoUpload = async (e) => {
@@ -374,7 +320,7 @@ export default function OrderDetailPage() {
     let phone = order.clientes.telefono.replace(/\D/g, ''); if (phone.length === 9) phone = '56' + phone;
     const patentes = order.orden_autos.map(rel => rel.autos.patente).join(', ');
     const trackingUrl = `${window.location.origin}/seguimiento/${order.id}`;
-    const mensaje = `Hola *${order.clientes.nombre}*, somos del taller Multifrenos 🚗🔧.\nTu orden (Patente: *${patentes}*) está en estado: *${order.estado}*.\nPuedes ver el presupuesto aquí:\n${trackingUrl}`;
+    const mensaje = `Hola *${order.clientes.nombre}*, somos del taller Multifrenos.\nTu orden (Patente: *${patentes}*) está en estado: *${order.estado}*.\nPuedes ver el presupuesto aquí:\n${trackingUrl}`;
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(mensaje)}`, '_blank');
   }
 
@@ -390,65 +336,110 @@ export default function OrderDetailPage() {
   return (
     <div className="space-y-6 pb-20">
       
-      {/* HEADER Y TABS */}
+      {/* HEADER SUPERIOR */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
         <div className="flex items-center gap-4 w-full md:w-auto">
-          <button onClick={() => navigate('/ordenes')} className="p-2 hover:bg-slate-100 rounded-full"><ArrowLeft className="w-6 h-6 text-slate-500" /></button>
+          <button onClick={() => navigate('/ordenes')} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><ArrowLeft className="w-6 h-6 text-slate-500" /></button>
           <div>
-            <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">Orden #{order.folio || order.id.slice(0,6).toUpperCase()}</h1>
-            <p className="text-sm text-slate-500">{order.clientes?.nombre}</p>
+            <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">Orden #{order.folio || order.id.slice(0,6).toUpperCase()}</h1>
+            <p className="text-sm font-medium text-slate-500">{order.clientes?.nombre}</p>
           </div>
         </div>
-        <span className="bg-slate-100 text-slate-600 px-4 py-2 rounded-lg font-bold border border-slate-200">Estado: {order.estado}</span>
+        <span className="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-lg font-bold border border-blue-200 text-sm uppercase tracking-wider">{order.estado}</span>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-2 border-b border-slate-200">
+      {/* PESTAÑAS (TABS) OPTIMIZADAS */}
+      <div className="flex gap-2 overflow-x-auto pb-2 border-b border-slate-200 hide-scrollbar">
         {order.orden_autos.map((rel) => (
-          <button key={rel.id} onClick={() => setupActiveCar(rel)} className={`flex items-center gap-2 px-6 py-3 rounded-t-xl border-b-2 font-bold transition-all whitespace-nowrap ${activeTab === rel.autos.id ? 'border-brand-primary text-brand-primary bg-white shadow-sm' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><Car className="w-4 h-4" /> {rel.autos.patente}</button>
+          <button 
+            key={rel.id} 
+            onClick={() => setupActiveCar(rel)} 
+            className={`flex flex-col items-start px-5 py-2.5 rounded-t-xl border-b-4 transition-all whitespace-nowrap min-w-[140px] ${activeTab === rel.autos.id ? 'border-brand-primary bg-white shadow-sm' : 'border-transparent bg-slate-50 hover:bg-slate-100 text-slate-500'}`}
+          >
+            <span className={`font-black font-mono text-lg flex items-center gap-2 ${activeTab === rel.autos.id ? 'text-slate-900' : 'text-slate-600'}`}>
+              <Car className="w-4 h-4" /> {rel.autos.patente}
+            </span>
+            <span className={`text-[10px] uppercase font-bold tracking-widest ${activeTab === rel.autos.id ? 'text-brand-primary' : 'text-slate-400'}`}>
+              {rel.autos.marca} {rel.autos.modelo}
+            </span>
+          </button>
         ))}
-        <button onClick={() => setActiveTab('resumen')} className={`flex items-center gap-2 px-6 py-3 rounded-t-xl border-b-2 font-bold transition-all whitespace-nowrap ml-auto ${activeTab === 'resumen' ? 'border-green-500 text-green-600 bg-white shadow-sm' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}><CheckCircle className="w-4 h-4" /> Finalizar y Cobro</button>
+        <button 
+          onClick={() => setActiveTab('resumen')} 
+          className={`flex items-center gap-2 px-6 py-4 rounded-t-xl border-b-4 font-black transition-all whitespace-nowrap ml-auto ${activeTab === 'resumen' ? 'border-green-500 text-green-700 bg-white shadow-sm' : 'border-transparent text-slate-500 bg-slate-50 hover:bg-slate-100'}`}
+        >
+          <CheckCircle className="w-5 h-5" /> CIERRE Y COBRO
+        </button>
       </div>
 
+      {/* CONTENIDO DEL VEHÍCULO ACTIVO */}
       {activeCar && activeTab !== 'resumen' && (
         <div className="space-y-6 animate-fade-in">
           
-          {/* SECCIÓN DATOS VEHÍCULO */}
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2 border-b pb-3 mb-4">
-              <Car className="w-5 h-5 text-slate-400" /> Datos del Vehículo y Recepción
-            </h3>
+          {/* CABECERA GIGANTE DEL VEHÍCULO */}
+          <div className="bg-slate-900 rounded-xl p-5 shadow-lg flex flex-col md:flex-row justify-between md:items-center gap-4 border-l-4 border-brand-primary">
+            <div>
+              <p className="text-blue-400 text-[10px] font-black uppercase tracking-widest mb-1">Vehículo en revisión</p>
+              <h2 className="text-2xl md:text-3xl font-black text-white uppercase tracking-tight flex items-center gap-3">
+                {activeCar.marca} {activeCar.modelo}
+                <span className="bg-white/10 text-white border border-white/20 px-3 py-1 rounded-lg font-mono text-lg">{activeCar.patente}</span>
+              </h2>
+            </div>
+          </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Columna 1: Info Técnica */}
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className="text-[10px] font-bold text-slate-400 uppercase">Año</label><input type="number" className="w-full p-2 border rounded bg-slate-50 font-bold text-sm text-center" value={carEdits[activeTab]?.anio} onChange={(e) => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], anio: e.target.value}})} /></div>
-                  <div><label className="text-[10px] font-bold text-slate-400 uppercase">Color</label><input className="w-full p-2 border rounded bg-slate-50 font-bold text-sm text-center uppercase" value={carEdits[activeTab]?.color} onChange={(e) => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], color: e.target.value}})} /></div>
+          {/* FICHA TÉCNICA Y RECEPCIÓN REORGANIZADA */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* MOTIVO DE INGRESO (Lo más importante para el mecánico) */}
+            <div className="lg:col-span-2 bg-yellow-50 border border-yellow-200 rounded-xl p-5 shadow-sm flex flex-col">
+              <label className="text-xs font-black text-yellow-800 uppercase tracking-widest mb-2 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4"/> Motivo de Visita / Observaciones de Ingreso
+              </label>
+              <textarea 
+                className="w-full p-4 border border-yellow-300 rounded-lg flex-1 text-sm bg-white font-medium text-slate-800 resize-none focus:ring-2 focus:ring-yellow-400 outline-none placeholder:text-slate-400" 
+                placeholder="Ej: Cliente indica que suena al frenar. Daño en parachoques trasero..." 
+                value={checklist.observaciones_recepcion} 
+                onChange={e => setChecklist({...checklist, observaciones_recepcion: e.target.value})} 
+              />
+            </div>
+
+            {/* DATOS RÁPIDOS Y BOTÓN GUARDAR */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Kilometraje</label>
+                  <div className="relative">
+                    <Gauge className="w-4 h-4 absolute left-3 top-3 text-slate-400"/>
+                    <input type="number" className="w-full pl-9 p-2.5 border border-slate-200 rounded-lg font-mono font-bold text-slate-700 bg-slate-50 outline-none focus:border-blue-500" value={checklist.kilometraje} onChange={e => setChecklist({...checklist, kilometraje: e.target.value})} />
+                  </div>
                 </div>
-                <div><label className="text-[10px] font-bold text-slate-400 uppercase">Número VIN / Chasis</label><input className="w-full p-2 border rounded uppercase font-mono bg-slate-50 text-sm font-bold tracking-widest" value={carEdits[activeTab]?.vin} onChange={(e) => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], vin: e.target.value.toUpperCase()}})} /></div>
-                <div><label className="text-[10px] font-bold text-slate-400 uppercase">Número de Motor</label><input placeholder="Opcional" className="w-full p-2 border rounded uppercase font-mono bg-slate-50 text-sm font-bold tracking-widest" value={carEdits[activeTab]?.numero_motor} onChange={(e) => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], numero_motor: e.target.value.toUpperCase()}})} /></div>
-              </div>
-
-              {/* Columna 2: Recepción */}
-              <div className="space-y-3">
-                <div><label className="text-[10px] font-bold text-slate-400 uppercase">Kilometraje</label><div className="relative"><Gauge className="w-4 h-4 absolute left-3 top-2.5 text-slate-400"/><input type="number" className="w-full pl-9 p-2 border rounded font-mono bg-slate-50 text-sm" value={checklist.kilometraje} onChange={e => setChecklist({...checklist, kilometraje: e.target.value})} /></div></div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Combustible ({checklist.nivel_combustible}%)</label>
-                  <div className="flex items-center gap-3 mt-2">
-                    <Fuel className="w-4 h-4 text-slate-400"/>
+                <div className="flex-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Combustible: {checklist.nivel_combustible}%</label>
+                  <div className="h-10 flex items-center px-2 bg-slate-50 border border-slate-200 rounded-lg">
                     <input type="range" className="w-full h-2 bg-blue-200 rounded-lg cursor-pointer" value={checklist.nivel_combustible} onChange={e => setChecklist({...checklist, nivel_combustible: e.target.value})} />
                   </div>
                 </div>
               </div>
+              
+              {/* ACORDEÓN DE DATOS TÉCNICOS OCULTOS PARA AHORRAR ESPACIO */}
+              <details className="group border border-slate-200 rounded-lg bg-slate-50">
+                <summary className="text-xs font-bold text-slate-600 p-3 cursor-pointer list-none flex justify-between items-center">
+                  Ver Datos Técnicos (VIN, Motor, Año)
+                  <ChevronDown className="w-4 h-4 group-open:rotate-180 transition-transform"/>
+                </summary>
+                <div className="p-3 border-t border-slate-200 space-y-3 bg-white rounded-b-lg">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="text-[9px] font-bold text-slate-400 uppercase">Año</label><input type="number" className="w-full p-2 border rounded bg-slate-50 font-bold text-xs text-center outline-none focus:border-blue-500" value={carEdits[activeTab]?.anio} onChange={(e) => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], anio: e.target.value}})} /></div>
+                    <div><label className="text-[9px] font-bold text-slate-400 uppercase">Color</label><input className="w-full p-2 border rounded bg-slate-50 font-bold text-xs text-center uppercase outline-none focus:border-blue-500" value={carEdits[activeTab]?.color} onChange={(e) => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], color: e.target.value}})} /></div>
+                  </div>
+                  <div><label className="text-[9px] font-bold text-slate-400 uppercase">VIN / Chasis</label><input className="w-full p-2 border rounded uppercase font-mono bg-slate-50 text-xs font-bold outline-none focus:border-blue-500" value={carEdits[activeTab]?.vin} onChange={(e) => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], vin: e.target.value.toUpperCase()}})} /></div>
+                  <div><label className="text-[9px] font-bold text-slate-400 uppercase">Motor</label><input className="w-full p-2 border rounded uppercase font-mono bg-slate-50 text-xs font-bold outline-none focus:border-blue-500" value={carEdits[activeTab]?.numero_motor} onChange={(e) => setCarEdits({...carEdits, [activeTab]: {...carEdits[activeTab], numero_motor: e.target.value.toUpperCase()}})} /></div>
+                </div>
+              </details>
 
-              {/* Columna 3: Notas y Guardar */}
-              <div className="flex flex-col">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Daños / Notas de Ingreso</label>
-                <textarea className="w-full p-2 border rounded flex-1 text-sm bg-slate-50 resize-none min-h-[80px]" placeholder="Ej: Rayón puerta izq..." value={checklist.observaciones_recepcion} onChange={e => setChecklist({...checklist, observaciones_recepcion: e.target.value})} />
-                <button onClick={saveAllCarData} className="mt-3 w-full py-2.5 bg-slate-900 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors">
-                  <Save className="w-4 h-4"/> Guardar Ficha
-                </button>
-              </div>
+              <button onClick={saveAllCarData} className="w-full py-3 bg-slate-900 text-white rounded-lg font-black tracking-wide flex items-center justify-center gap-2 hover:bg-slate-800 transition-transform active:scale-95 shadow-md">
+                <Save className="w-4 h-4"/> GUARDAR FICHA
+              </button>
             </div>
           </div>
 
@@ -473,7 +464,6 @@ export default function OrderDetailPage() {
                       <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400"/>
                       <input placeholder="Buscar servicio base (ej: Afinamiento)..." className="w-full pl-10 p-2.5 border border-blue-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={selectedService ? selectedService.nombre : searchServiceTerm} onChange={e => { setSearchServiceTerm(e.target.value); setSelectedService(null); }}/>
                       
-                      {/* Dropdown de Servicios (Dentro del input para no tapar el botón Añadir) */}
                       {filteredServices.length > 0 && !selectedService && (
                         <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 shadow-xl rounded-lg max-h-48 overflow-y-auto z-30">
                           {filteredServices.map(s => (
@@ -542,7 +532,6 @@ export default function OrderDetailPage() {
                             <Search className="w-4 h-4 absolute left-3 top-2.5 text-blue-400"/>
                             <input autoFocus placeholder="Código o nombre del repuesto..." className="w-full pl-9 p-2 border border-blue-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500" value={selectedNestInv ? selectedNestInv.nombre : searchNestTerm} onChange={e => { setSearchNestTerm(e.target.value); setSelectedNestInv(null); }} />
                             
-                            {/* LISTA AUTOSUGERIDA PARA INVENTARIO */}
                             {filteredNestInventory.length > 0 && !selectedNestInv && (
                               <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 shadow-2xl rounded-lg max-h-48 overflow-y-auto z-50">
                                 {filteredNestInventory.map(i => (
