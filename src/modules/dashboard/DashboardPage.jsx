@@ -86,7 +86,7 @@ export default function DashboardPage() {
       
       {/* HEADER */}
       <div>
-        <h1 className="text-3xl font-black text-slate-800 tracking-tight">Hola, Equipo Multifrenos 👋</h1>
+        <h1 className="text-3xl font-black text-slate-800 tracking-tight">Resumen</h1>
         <p className="text-slate-500 mt-1">Este es el resumen de tu taller durante el mes de <strong>{currentMonthName}</strong>.</p>
       </div>
 
