@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Wrench, Settings, LogOut, Car, Tag, Package, FileText, ClipboardList, ListTodo, Columns, DollarSign } from 'lucide-react'
+import { LayoutDashboard, Users, Wrench, Settings, LogOut, Car, Tag, Package, FileText, ClipboardList, ListTodo, Columns, DollarSign, ChevronLeft, ChevronRight, Zap } from 'lucide-react'
 import { supabase } from '../supabase/client'
 
 export default function Sidebar() {
   const location = useLocation()
-  const [userRole, setUserRole] = useState('admin') // Por defecto admin mientras carga
+  const [userRole, setUserRole] = useState('admin') 
   const [userName, setUserName] = useState('Cargando...')
   const [loading, setLoading] = useState(true)
+  
+  // Estado para contraer/expandir el menú en PC (Ahorra espacio en pantalla)
+  const [isCollapsed, setIsCollapsed] = useState(false)
 
   useEffect(() => {
     getUserProfile()
@@ -16,14 +19,11 @@ export default function Sidebar() {
   async function getUserProfile() {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      // Buscamos el rol del usuario en la tabla perfiles
       const { data, error } = await supabase.from('perfiles').select('nombre, rol').eq('id', user.id).single()
-      
       if (data) {
         setUserRole(data.rol)
         setUserName(data.nombre || user.email.split('@')[0])
       } else {
-        // Si no existe en la tabla perfiles aún, asumimos admin y mostramos su email
         setUserRole('admin')
         setUserName(user.email.split('@')[0])
       }
@@ -33,74 +33,147 @@ export default function Sidebar() {
 
   const isActive = (path) => location.pathname === path
 
-  // --- CONFIGURACIÓN DE ROLES POR SECCIÓN ---
-  // admin: Ve todo (El dueño)
-  // recepcion: Crea órdenes, ve clientes, inventario, Kanban, pero NO ve dinero ni reportes.
-  // mecanico: Solo ve el Kanban, tareas, y las órdenes (para el checklist).
-  const menuItems = [
-    { icon: LayoutDashboard, label: 'Panel Principal', path: '/dashboard', roles: ['admin'] },
-    { icon: FileText, label: 'Órdenes de Trabajo', path: '/ordenes', roles: ['admin', 'recepcion', 'mecanico'] },
-    { icon: Columns, label: 'Pizarra (Kanban)', path: '/pizarra', roles: ['admin', 'recepcion', 'mecanico'] },
-    { icon: Wrench, label: 'Pañol y Herramientas', path: '/herramientas', roles: ['admin', 'recepcion', 'mecanico'] },
-    { icon: DollarSign, label: 'Caja Chica', path: '/gastos', roles: ['admin'] }, // PRÓXIMO MÓDULO
-    { icon: Users, label: 'Clientes', path: '/clientes', roles: ['admin', 'recepcion'] },
-    { icon: Car, label: 'Vehículos', path: '/autos', roles: ['admin', 'recepcion'] },
-    { icon: Tag, label: 'Catálogo Servicios', path: '/servicios', roles: ['admin'] },
-    { icon: Package, label: 'Bodega / Inventario', path: '/inventario', roles: ['admin', 'recepcion'] },
-    { icon: ListTodo, label: 'Tareas y Notas', path: '/tareas', roles: ['admin', 'recepcion', 'mecanico'] },
-    { icon: ClipboardList, label: 'Plantillas Checklist', path: '/plantillas', roles: ['admin'] },
-    { icon: Settings, label: 'Ajustes Generales', path: '/ajustes', roles: ['admin'] }, // PRÓXIMO MÓDULO
+  // --- AGRUPACIÓN INTELIGENTE Y ROLES ---
+  const menuGroups = [
+    {
+      titulo: 'Operativa Diaria',
+      items: [
+        { icon: Columns, label: 'Pizarra (Kanban)', path: '/pizarra', roles: ['admin', 'recepcion', 'mecanico'] },
+        { icon: FileText, label: 'Órdenes de Trabajo', path: '/ordenes', roles: ['admin', 'recepcion', 'mecanico'] },
+        { icon: ListTodo, label: 'Tareas y Notas', path: '/tareas', roles: ['admin', 'recepcion', 'mecanico'] },
+      ]
+    },
+    {
+      titulo: 'Taller y Logística',
+      items: [
+        { icon: Wrench, label: 'Pañol y Herramientas', path: '/herramientas', roles: ['admin', 'recepcion', 'mecanico'] },
+        { icon: Package, label: 'Bodega / Inventario', path: '/inventario', roles: ['admin', 'recepcion'] },
+        { icon: Car, label: 'Parque Automotriz', path: '/autos', roles: ['admin', 'recepcion'] },
+      ]
+    },
+    {
+      titulo: 'Administración',
+      items: [
+        { icon: LayoutDashboard, label: 'Panel Principal', path: '/dashboard', roles: ['admin'] },
+        { icon: Users, label: 'Directorio Clientes', path: '/clientes', roles: ['admin', 'recepcion'] },
+        { icon: Tag, label: 'Catálogo Servicios', path: '/servicios', roles: ['admin'] },
+        { icon: ClipboardList, label: 'Plantillas Checklist', path: '/plantillas', roles: ['admin'] },
+        { icon: DollarSign, label: 'Caja Chica', path: '/gastos', roles: ['admin'] },
+      ]
+    },
+    {
+      titulo: 'Sistema',
+      items: [
+        { icon: Settings, label: 'Ajustes Generales', path: '/ajustes', roles: ['admin'] },
+      ]
+    }
   ]
 
-  // Filtramos el menú para mostrar solo lo que el rol actual permite ver
-  const filteredMenu = menuItems.filter(item => item.roles.includes(userRole))
-
-  if (loading) return <aside className="w-full md:w-64 bg-slate-900 h-full"></aside>
+  if (loading) return <aside className={`bg-slate-950 h-full transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-full md:w-72'}`}></aside>
 
   return (
-    <aside className="w-full md:w-64 bg-slate-900 text-white flex flex-col h-full shadow-xl">
-      {/* Logo / Marca */}
-      <div className="p-6 border-b border-slate-700 flex items-center gap-3">
-        <div className="w-8 h-8 bg-brand-primary rounded-lg flex items-center justify-center font-bold text-lg text-white">M</div>
-        <h1 className="text-xl font-bold tracking-wide">Multifrenos</h1>
+    <aside className={`bg-slate-950 text-slate-300 flex flex-col h-full shadow-2xl border-r border-slate-800 transition-all duration-300 relative ${isCollapsed ? 'w-20' : 'w-full md:w-72 shrink-0'}`}>
+      
+      {/* BOTÓN PARA CONTRAER/EXPANDIR (Solo visible en Desktop) */}
+      <button 
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="hidden md:flex absolute -right-3.5 top-8 bg-slate-800 border-2 border-slate-950 text-slate-400 hover:text-white p-1 rounded-full z-10 transition-colors shadow-lg"
+      >
+        {isCollapsed ? <ChevronRight className="w-4 h-4"/> : <ChevronLeft className="w-4 h-4"/>}
+      </button>
+
+      {/* HEADER / LOGO */}
+      <div className={`p-6 border-b border-slate-800/50 flex items-center transition-all ${isCollapsed ? 'justify-center px-0' : 'gap-3'}`}>
+        <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30 shrink-0">
+          <Zap className="w-5 h-5 text-white fill-white"/>
+        </div>
+        {!isCollapsed && (
+          <div className="overflow-hidden animate-fade-in">
+            <h1 className="text-xl font-black text-white tracking-wide leading-none">Multifrenos</h1>
+            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-blue-400 mt-1">Gestión Integral</p>
+          </div>
+        )}
       </div>
 
-      {/* Navegación (Filtrada por Rol) */}
-      <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto">
-        {filteredMenu.map((item) => (
-          <Link
-            key={item.path}
-            to={item.path}
-            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-              isActive(item.path) 
-                ? 'bg-brand-primary text-white shadow-lg shadow-blue-900/50' 
-                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <item.icon className="w-5 h-5" />
-            <span className="font-medium">{item.label}</span>
-          </Link>
-        ))}
+      {/* NAVEGACIÓN AGRUPADA */}
+      <nav className="flex-1 py-6 px-3 space-y-6 overflow-y-auto custom-scrollbar">
+        {menuGroups.map((group, groupIndex) => {
+          // Filtramos los items de este grupo según el rol
+          const allowedItems = group.items.filter(item => item.roles.includes(userRole))
+          
+          // Si el usuario no tiene acceso a nada de este grupo, no lo mostramos
+          if (allowedItems.length === 0) return null;
+
+          return (
+            <div key={groupIndex} className="space-y-1">
+              {/* Título del Grupo */}
+              {!isCollapsed ? (
+                <h3 className="px-4 text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
+                  {group.titulo}
+                </h3>
+              ) : (
+                <div className="w-8 border-t-2 border-slate-800 mx-auto my-4 rounded-full"></div>
+              )}
+
+              {/* Enlaces */}
+              {allowedItems.map((item) => {
+                const active = isActive(item.path)
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    title={isCollapsed ? item.label : ''} // Tooltip nativo cuando está contraído
+                    className={`flex items-center rounded-xl transition-all group relative ${
+                      isCollapsed ? 'justify-center p-3' : 'px-4 py-3 gap-3'
+                    } ${
+                      active 
+                        ? 'bg-blue-600/10 text-blue-400' 
+                        : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+                    }`}
+                  >
+                    {/* Indicador visual activo (Barra lateral) */}
+                    {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-500 rounded-r-full shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>}
+                    
+                    <item.icon className={`shrink-0 transition-transform ${isCollapsed ? 'w-6 h-6' : 'w-5 h-5'} ${active ? 'text-blue-500' : 'group-hover:scale-110 text-slate-500 group-hover:text-slate-300'}`} />
+                    
+                    {!isCollapsed && (
+                      <span className={`font-bold text-sm tracking-wide ${active ? 'text-white' : ''}`}>
+                        {item.label}
+                      </span>
+                    )}
+                  </Link>
+                )
+              })}
+            </div>
+          )
+        })}
       </nav>
 
-      {/* Footer del Menú (Muestra quién está conectado) */}
-      <div className="p-4 border-t border-slate-800 bg-slate-950">
-        <div className="mb-4 px-2 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
-            <span className="font-bold text-slate-300">{userName.charAt(0).toUpperCase()}</span>
+      {/* FOOTER: PERFIL DEL USUARIO */}
+      <div className={`p-4 border-t border-slate-800 bg-slate-900/50 transition-all ${isCollapsed ? 'flex flex-col items-center' : ''}`}>
+        <div className={`mb-4 flex items-center ${isCollapsed ? 'justify-center' : 'gap-3 px-2'}`}>
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center border border-slate-600 shadow-inner shrink-0">
+            <span className="font-black text-white">{userName.charAt(0).toUpperCase()}</span>
           </div>
-          <div className="overflow-hidden">
-            <p className="text-sm font-bold text-slate-200 truncate">{userName}</p>
-            <p className="text-[10px] text-brand-primary uppercase tracking-widest font-black">{userRole}</p>
-          </div>
+          {!isCollapsed && (
+            <div className="overflow-hidden">
+              <p className="text-sm font-bold text-white truncate">{userName}</p>
+              <p className="text-[10px] text-brand-primary uppercase tracking-widest font-black flex items-center gap-1">
+                {userRole}
+              </p>
+            </div>
+          )}
         </div>
         
         <button 
           onClick={() => supabase.auth.signOut()}
-          className="flex items-center gap-3 px-4 py-2.5 w-full text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-colors"
+          title={isCollapsed ? 'Cerrar Sesión' : ''}
+          className={`flex items-center text-red-400 hover:bg-red-500/10 hover:text-red-300 rounded-xl transition-colors w-full border border-transparent hover:border-red-500/20 ${
+            isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-3'
+          }`}
         >
-          <LogOut className="w-4 h-4" />
-          <span className="font-bold text-sm">Cerrar Sesión</span>
+          <LogOut className={`shrink-0 ${isCollapsed ? 'w-5 h-5' : 'w-4 h-4'}`} />
+          {!isCollapsed && <span className="font-bold text-sm">Cerrar Sesión</span>}
         </button>
       </div>
     </aside>
