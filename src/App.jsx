@@ -11,6 +11,7 @@ import MainLayout from './layouts/MainLayout'
 // el código de la página que el usuario necesita ver en ese momento.
 // Esto hace que la carga inicial sea ultrarrápida (Especialmente para los clientes).
 
+const CotizacionesPage = lazy(() => import('./modules/cotizaciones/CotizacionesPage'))
 const LoginPage = lazy(() => import('./modules/auth/LoginPage'))
 const DashboardPage = lazy(() => import('./modules/dashboard/DashboardPage'))
 const OrdersPage = lazy(() => import('./modules/orders/OrdersPage'))
@@ -38,7 +39,7 @@ const GlobalLoader = () => (
   <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 selection:bg-blue-500">
     <div className="relative flex flex-col items-center animate-pulse-slow">
       <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-blue-500/30 mb-6">
-        <Zap className="w-8 h-8 text-white fill-white"/>
+        <Zap className="w-8 h-8 text-white fill-white" />
       </div>
       <Loader2 className="w-8 h-8 text-blue-400 animate-spin absolute -bottom-12" />
     </div>
@@ -72,7 +73,7 @@ function App() {
       {/* El Suspense envuelve las rutas para mostrar el Loader mientras se descarga el código de esa página */}
       <Suspense fallback={<GlobalLoader />}>
         <Routes>
-          
+
           {/* ============================== */}
           {/* RUTAS PÚBLICAS (CLIENTES)      */}
           {/* ============================== */}
@@ -81,9 +82,9 @@ function App() {
           <Route path="/mi-auto/:token" element={<PortalCliente />} />
 
           {/* RUTA DE LOGIN */}
-          <Route 
-            path="/login" 
-            element={!session ? <LoginPage /> : <Navigate to="/dashboard" replace />} 
+          <Route
+            path="/login"
+            element={!session ? <LoginPage /> : <Navigate to="/dashboard" replace />}
           />
 
           {/* ============================== */}
@@ -103,8 +104,9 @@ function App() {
               <Route path="/pizarra" element={<KanbanPage />} />
               <Route path="/ajustes" element={<AjustesPage />} />
               <Route path="/herramientas" element={<HerramientasPage />} />
+              <Route path="/cotizaciones" element={<CotizacionesPage />} />
               <Route path="/gastos" element={<GastosPage />} />
-              
+
               {/* Fallback interno a Dashboard si la ruta no existe */}
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
@@ -112,7 +114,7 @@ function App() {
 
           {/* Redirección de seguridad total si alguien intenta forzar una URL sin sesión */}
           {!session && <Route path="*" element={<Navigate to="/login" replace />} />}
-          
+
         </Routes>
       </Suspense>
     </BrowserRouter>

@@ -39,8 +39,8 @@ export default function DashboardPage() {
 
     // Calcular Finanzas
     const totalIngresos = (ordenesMes || []).reduce((sum, ord) => sum + (Number(ord.total) || 0), 0)
-    const totalGastos = (gastosMes || []).reduce((sum, gas) => sum + (Number(gastos.monto) || Number(gas.monto) || 0), 0)
-    
+    const totalGastos = (gastosMes || []).reduce((sum, gas) => sum + (Number(gas.monto) || 0), 0)
+
     setFinanzas({
       ingresos: totalIngresos,
       gastos: totalGastos,
@@ -79,11 +79,11 @@ export default function DashboardPage() {
   const money = (val) => new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(val)
   const currentMonthName = new Date().toLocaleString('es-ES', { month: 'long' }).toUpperCase()
 
-  if (loading) return <div className="flex justify-center p-20"><Loader2 className="animate-spin text-brand-primary w-12 h-12"/></div>
+  if (loading) return <div className="flex justify-center p-20"><Loader2 className="animate-spin text-brand-primary w-12 h-12" /></div>
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-20 animate-fade-in">
-      
+
       {/* HEADER */}
       <div>
         <h1 className="text-3xl font-black text-slate-800 tracking-tight">Resumen</h1>
@@ -126,24 +126,24 @@ export default function DashboardPage() {
 
       {/* --- FILA 2: OPERACIONES Y ALERTAS --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
+
         {/* COLUMNA IZQUIERDA: Autos en Taller */}
         <div className="lg:col-span-2 space-y-6">
-          
+
           {/* Mini Resumen de Estados */}
           <div className="grid grid-cols-3 gap-4">
             <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl flex flex-col items-center justify-center text-center cursor-pointer hover:bg-indigo-100 transition-colors" onClick={() => navigate('/pizarra')}>
-              <Calendar className="w-6 h-6 text-indigo-500 mb-2"/>
+              <Calendar className="w-6 h-6 text-indigo-500 mb-2" />
               <span className="text-3xl font-black text-indigo-700">{metricas.agendados}</span>
               <span className="text-[10px] font-bold text-indigo-500 uppercase mt-1">Por Llegar</span>
             </div>
             <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl flex flex-col items-center justify-center text-center cursor-pointer hover:bg-amber-100 transition-colors" onClick={() => navigate('/pizarra')}>
-              <Wrench className="w-6 h-6 text-amber-500 mb-2"/>
+              <Wrench className="w-6 h-6 text-amber-500 mb-2" />
               <span className="text-3xl font-black text-amber-700">{metricas.enProceso}</span>
               <span className="text-[10px] font-bold text-amber-500 uppercase mt-1">En Reparación</span>
             </div>
             <div className="bg-green-50 border border-green-100 p-4 rounded-xl flex flex-col items-center justify-center text-center cursor-pointer hover:bg-green-100 transition-colors" onClick={() => navigate('/pizarra')}>
-              <CheckCircle className="w-6 h-6 text-green-500 mb-2"/>
+              <CheckCircle className="w-6 h-6 text-green-500 mb-2" />
               <span className="text-3xl font-black text-green-700">{metricas.finalizados}</span>
               <span className="text-[10px] font-bold text-green-500 uppercase mt-1">Listos / Retiro</span>
             </div>
@@ -152,10 +152,10 @@ export default function DashboardPage() {
           {/* Lista de Autos Activos */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Car className="w-5 h-5 text-brand-primary"/> Vehículos Activos</h3>
+              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><Car className="w-5 h-5 text-brand-primary" /> Vehículos Activos</h3>
               <button onClick={() => navigate('/pizarra')} className="text-sm font-bold text-brand-primary hover:underline">Ver Pizarra Completa</button>
             </div>
-            
+
             <div className="divide-y divide-slate-100">
               {autosEnTaller.length === 0 ? (
                 <p className="text-center text-slate-400 py-8 text-sm">No hay vehículos en el taller actualmente.</p>
@@ -166,19 +166,18 @@ export default function DashboardPage() {
                     <div key={orden.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => navigate(`/ordenes/${orden.id}`)}>
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center border border-slate-200 font-mono font-bold text-sm text-slate-700">
-                          {auto.patente ? auto.patente.slice(0,4) : 'S/P'}
+                          {auto.patente ? auto.patente.slice(0, 4) : 'S/P'}
                         </div>
                         <div>
                           <p className="font-bold text-slate-800">{auto.marca} {auto.modelo}</p>
                           <p className="text-xs text-slate-500">{orden.clientes?.nombre}</p>
                         </div>
                       </div>
-                      <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${
-                        orden.estado === 'Agendado' ? 'bg-indigo-100 text-indigo-700' :
-                        orden.estado === 'En Proceso' ? 'bg-amber-100 text-amber-700' :
-                        orden.estado === 'Recibido' ? 'bg-blue-100 text-blue-700' :
-                        'bg-green-100 text-green-700'
-                      }`}>
+                      <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${orden.estado === 'Agendado' ? 'bg-indigo-100 text-indigo-700' :
+                          orden.estado === 'En Proceso' ? 'bg-amber-100 text-amber-700' :
+                            orden.estado === 'Recibido' ? 'bg-blue-100 text-blue-700' :
+                              'bg-green-100 text-green-700'
+                        }`}>
                         {orden.estado}
                       </span>
                     </div>
@@ -194,15 +193,15 @@ export default function DashboardPage() {
           <div className="bg-white rounded-2xl shadow-sm border border-red-200 overflow-hidden sticky top-6">
             <div className="bg-red-50 p-5 border-b border-red-100">
               <h3 className="font-bold text-red-800 flex items-center gap-2">
-                <AlertCircle className="w-5 h-5"/> Cuentas por Cobrar
+                <AlertCircle className="w-5 h-5" /> Cuentas por Cobrar
               </h3>
               <p className="text-xs text-red-600 mt-1">Autos terminados que aún no pagan.</p>
             </div>
-            
+
             <div className="divide-y divide-red-50">
               {cuentasPorCobrar.length === 0 ? (
                 <div className="p-8 text-center">
-                  <CheckCircle className="w-12 h-12 text-green-300 mx-auto mb-2"/>
+                  <CheckCircle className="w-12 h-12 text-green-300 mx-auto mb-2" />
                   <p className="text-sm font-bold text-slate-500">¡Todo al día!</p>
                   <p className="text-xs text-slate-400">No hay deudas pendientes.</p>
                 </div>
@@ -212,16 +211,16 @@ export default function DashboardPage() {
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <p className="font-bold text-slate-800 text-sm line-clamp-1">{orden.clientes?.nombre}</p>
-                        <p className="text-[10px] text-slate-400 font-mono mt-0.5">Folio: #{orden.folio || orden.id.slice(0,5).toUpperCase()}</p>
+                        <p className="text-[10px] text-slate-400 font-mono mt-0.5">Folio: #{orden.folio || orden.id.slice(0, 5).toUpperCase()}</p>
                       </div>
                       <span className="font-black text-red-600">{money(orden.total)}</span>
                     </div>
-                    
-                    <button 
+
+                    <button
                       onClick={() => navigate(`/ordenes/${orden.id}`)}
                       className="w-full mt-3 py-2 bg-white border border-red-200 text-red-600 rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
                     >
-                      <DollarSign className="w-4 h-4"/> Gestionar Cobro
+                      <DollarSign className="w-4 h-4" /> Gestionar Cobro
                     </button>
                   </div>
                 ))

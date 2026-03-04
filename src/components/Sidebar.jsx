@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Users, Wrench, Settings, LogOut, Car, Tag, Package, FileText, ClipboardList, ListTodo, Columns, DollarSign, ChevronLeft, ChevronRight, Zap } from 'lucide-react'
+import { LayoutDashboard, Users, Wrench, Settings, LogOut, Car, Tag, Package, FileText, ClipboardList, ListTodo, Columns, DollarSign, ChevronLeft, ChevronRight, Zap, Calculator } from 'lucide-react'
 import { supabase } from '../supabase/client'
 
 export default function Sidebar() {
   const location = useLocation()
-  const [userRole, setUserRole] = useState('admin') 
+  const [userRole, setUserRole] = useState('admin')
   const [userName, setUserName] = useState('Cargando...')
   const [loading, setLoading] = useState(true)
-  
+
   // Estado para contraer/expandir el menú en PC (Ahorra espacio en pantalla)
   const [isCollapsed, setIsCollapsed] = useState(false)
 
@@ -38,6 +38,7 @@ export default function Sidebar() {
     {
       titulo: 'Operativa Diaria',
       items: [
+        { icon: Calculator, label: 'Cotizador Rápido', path: '/cotizaciones', roles: ['admin', 'recepcion'] },
         { icon: Columns, label: 'Pizarra (Kanban)', path: '/pizarra', roles: ['admin', 'recepcion', 'mecanico'] },
         { icon: FileText, label: 'Órdenes de Trabajo', path: '/ordenes', roles: ['admin', 'recepcion', 'mecanico'] },
         { icon: ListTodo, label: 'Tareas y Notas', path: '/tareas', roles: ['admin', 'recepcion', 'mecanico'] },
@@ -73,19 +74,19 @@ export default function Sidebar() {
 
   return (
     <aside className={`bg-slate-950 text-slate-300 flex flex-col h-full shadow-2xl border-r border-slate-800 transition-all duration-300 relative ${isCollapsed ? 'w-20' : 'w-full md:w-72 shrink-0'}`}>
-      
+
       {/* BOTÓN PARA CONTRAER/EXPANDIR (Solo visible en Desktop) */}
-      <button 
+      <button
         onClick={() => setIsCollapsed(!isCollapsed)}
         className="hidden md:flex absolute -right-3.5 top-8 bg-slate-800 border-2 border-slate-950 text-slate-400 hover:text-white p-1 rounded-full z-10 transition-colors shadow-lg"
       >
-        {isCollapsed ? <ChevronRight className="w-4 h-4"/> : <ChevronLeft className="w-4 h-4"/>}
+        {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
       </button>
 
       {/* HEADER / LOGO */}
       <div className={`p-6 border-b border-slate-800/50 flex items-center transition-all ${isCollapsed ? 'justify-center px-0' : 'gap-3'}`}>
         <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30 shrink-0">
-          <Zap className="w-5 h-5 text-white fill-white"/>
+          <Zap className="w-5 h-5 text-white fill-white" />
         </div>
         {!isCollapsed && (
           <div className="overflow-hidden animate-fade-in">
@@ -100,7 +101,7 @@ export default function Sidebar() {
         {menuGroups.map((group, groupIndex) => {
           // Filtramos los items de este grupo según el rol
           const allowedItems = group.items.filter(item => item.roles.includes(userRole))
-          
+
           // Si el usuario no tiene acceso a nada de este grupo, no lo mostramos
           if (allowedItems.length === 0) return null;
 
@@ -123,19 +124,17 @@ export default function Sidebar() {
                     key={item.path}
                     to={item.path}
                     title={isCollapsed ? item.label : ''} // Tooltip nativo cuando está contraído
-                    className={`flex items-center rounded-xl transition-all group relative ${
-                      isCollapsed ? 'justify-center p-3' : 'px-4 py-3 gap-3'
-                    } ${
-                      active 
-                        ? 'bg-blue-600/10 text-blue-400' 
+                    className={`flex items-center rounded-xl transition-all group relative ${isCollapsed ? 'justify-center p-3' : 'px-4 py-3 gap-3'
+                      } ${active
+                        ? 'bg-blue-600/10 text-blue-400'
                         : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-                    }`}
+                      }`}
                   >
                     {/* Indicador visual activo (Barra lateral) */}
                     {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-500 rounded-r-full shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>}
-                    
+
                     <item.icon className={`shrink-0 transition-transform ${isCollapsed ? 'w-6 h-6' : 'w-5 h-5'} ${active ? 'text-blue-500' : 'group-hover:scale-110 text-slate-500 group-hover:text-slate-300'}`} />
-                    
+
                     {!isCollapsed && (
                       <span className={`font-bold text-sm tracking-wide ${active ? 'text-white' : ''}`}>
                         {item.label}
@@ -164,13 +163,12 @@ export default function Sidebar() {
             </div>
           )}
         </div>
-        
-        <button 
+
+        <button
           onClick={() => supabase.auth.signOut()}
           title={isCollapsed ? 'Cerrar Sesión' : ''}
-          className={`flex items-center text-red-400 hover:bg-red-500/10 hover:text-red-300 rounded-xl transition-colors w-full border border-transparent hover:border-red-500/20 ${
-            isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-3'
-          }`}
+          className={`flex items-center text-red-400 hover:bg-red-500/10 hover:text-red-300 rounded-xl transition-colors w-full border border-transparent hover:border-red-500/20 ${isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-3'
+            }`}
         >
           <LogOut className={`shrink-0 ${isCollapsed ? 'w-5 h-5' : 'w-4 h-4'}`} />
           {!isCollapsed && <span className="font-bold text-sm">Cerrar Sesión</span>}
